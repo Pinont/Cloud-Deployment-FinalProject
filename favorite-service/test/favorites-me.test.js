@@ -3,10 +3,12 @@ const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 
-const { createApp, DEFAULT_JWT_SECRET } = require('../src/app');
+const { createApp } = require('../src/app');
+const TEST_JWT_SECRET = 'test-secret';
 
 test('FV-03: GET /favorites/me returns only current user favorites', async () => {
   const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
     favorites: [
       { userId: 'user-1', restaurantId: 'rest-1' },
       { userId: 'user-2', restaurantId: 'rest-2' },
@@ -14,7 +16,7 @@ test('FV-03: GET /favorites/me returns only current user favorites', async () =>
     ]
   });
 
-  const token = jwt.sign({ sub: 'user-1', email: 'a@example.com', role: 'user' }, DEFAULT_JWT_SECRET, {
+  const token = jwt.sign({ sub: 'user-1', email: 'a@example.com', role: 'user' }, TEST_JWT_SECRET, {
     algorithm: 'HS256',
     expiresIn: '1h'
   });
@@ -32,6 +34,7 @@ test('FV-03: GET /favorites/me returns only current user favorites', async () =>
 
 test('FV-03: GET /favorites/me without token returns 401', async () => {
   const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
     favorites: [{ userId: 'user-1', restaurantId: 'rest-1' }]
   });
 
