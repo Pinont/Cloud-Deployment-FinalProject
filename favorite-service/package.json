@@ -2,9 +2,12 @@
   "name": "favorite-service",
   "version": "1.0.0",
   "description": "Owner: @phoo3011 (Tester)",
-  "main": "src/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
-    "test": "node --test"
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "test": "tsx --test",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +18,12 @@
     "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
-    "supertest": "^7.3.1"
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.7.2",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.3.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   }
 }

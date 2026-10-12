@@ -1,6 +1,6 @@
-const { createApp } = require('./app');
+import { createApp, type Favorite } from './app';
 
-const favorites = [
+const favorites: Favorite[] = [
   { userId: 'user-1', restaurantId: 'rest-1' },
   { userId: 'user-2', restaurantId: 'rest-2' },
   { userId: 'user-1', restaurantId: 'rest-3' }
