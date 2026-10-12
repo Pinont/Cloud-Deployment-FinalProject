@@ -1,6 +1,12 @@
 const { createApp } = require('./app');
 
-const app = createApp();
+const favorites = [
+  { userId: 'user-1', restaurantId: 'rest-1' },
+  { userId: 'user-2', restaurantId: 'rest-2' },
+  { userId: 'user-1', restaurantId: 'rest-3' }
+];
+
+const app = createApp({ favorites });
 const port = process.env.PORT || 3004;
 
 app.listen(port, () => {
