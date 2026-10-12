@@ -1,0 +1,23 @@
+# Each folder is owned by the member who builds it.
+# CI template is owned by the PM only.
+
+*                                   @Pinont
+/auth-service/                      @Pinont
+/frontend/                          @Pinont
+/nginx/                             @Pinont
+/docs/                              @Pinont
+/docker-compose*.yml                @Pinont
+/.github/CODEOWNERS                 @Pinont
+/.github/workflows/_service-ci.yml  @Pinont
+/.github/workflows/auth-service.yml @Pinont
+
+/restaurant-service/                @Hydra07188
+/.github/workflows/restaurant-service.yml @Hydra07188
+
+/review-service/                    @flogame55
+/.github/workflows/review-service.yml @flogame55
+
+/favorite-service/                  @phoo3011
+/e2e/                               @phoo3011
+/.github/workflows/favorite-service.yml @phoo3011
+/.github/workflows/e2e.yml          @phoo3011
