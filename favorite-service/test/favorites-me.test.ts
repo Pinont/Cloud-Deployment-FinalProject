@@ -1,9 +1,10 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const jwt = require('jsonwebtoken');
-const request = require('supertest');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
 
-const { createApp } = require('../src/app');
+import { createApp } from '../src/app';
+
 const TEST_JWT_SECRET = 'test-secret';
 
 test('FV-03: GET /favorites/me returns only current user favorites', async () => {
