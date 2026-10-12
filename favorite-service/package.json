@@ -1,0 +1,19 @@
+{
+  "name": "favorite-service",
+  "version": "1.0.0",
+  "description": "Owner: @phoo3011 (Tester)",
+  "main": "src/server.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
+  }
+}
