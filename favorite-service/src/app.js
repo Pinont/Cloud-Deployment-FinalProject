@@ -16,7 +16,10 @@ function authenticate(jwtSecret) {
     const token = authHeader.slice('Bearer '.length);
 
     try {
-      const payload = jwt.verify(token, jwtSecret);
+      const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
+      if (typeof payload.sub !== 'string' || payload.sub === '') {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
       req.user = payload;
       return next();
     } catch {
