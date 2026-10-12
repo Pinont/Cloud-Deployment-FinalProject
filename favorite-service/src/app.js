@@ -1,4 +1,5 @@
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 
 const DEFAULT_JWT_SECRET = 'test-secret';
@@ -23,31 +24,15 @@ function authenticate(req, res, next) {
   }
 }
 
-function createRateLimiter({ maxRequests = RATE_LIMIT_MAX_REQUESTS, windowMs = RATE_LIMIT_WINDOW_MS } = {}) {
-  const requestBuckets = new Map();
-
-  return (req, res, next) => {
-    const key = req.ip || req.socket?.remoteAddress || 'unknown';
-    const now = Date.now();
-    const current = requestBuckets.get(key);
-
-    if (!current || now >= current.expiresAt) {
-      requestBuckets.set(key, { count: 1, expiresAt: now + windowMs });
-      return next();
-    }
-
-    if (current.count >= maxRequests) {
-      return res.status(429).json({ message: 'Too Many Requests' });
-    }
-
-    current.count += 1;
-    return next();
-  };
-}
-
 function createApp({ favorites = [] } = {}) {
   const app = express();
-  const rateLimiter = createRateLimiter();
+  const rateLimiter = rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    limit: RATE_LIMIT_MAX_REQUESTS,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too Many Requests' }
+  });
 
   app.get('/favorites/me', rateLimiter, authenticate, (req, res) => {
     const userFavorites = favorites.filter((favorite) => favorite.userId === req.user.sub);
