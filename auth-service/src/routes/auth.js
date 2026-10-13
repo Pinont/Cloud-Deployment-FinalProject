@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const requireAuth = require('../middleware/auth');
@@ -8,7 +9,9 @@ const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 const BCRYPT_COST = 10;
 const TOKEN_TTL = '1h';
+const REFRESH_TTL = '7d';
 const INVALID_LOGIN = { error: 'Invalid email or password' };
+const INVALID_REFRESH = { error: 'Invalid or expired refresh token' };
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const ACCOUNT_LOCKED = { error: 'Account locked. Try again in 15 minutes' };
@@ -42,6 +45,22 @@ async function resetFailedLogins(id, now) {
   const result = await User.updateOne({ _id: id, ...notLocked(now) }, { $set: { failedLogins: 0, lockUntil: null } });
   return result.matchedCount > 0;
 }
+
+// Refresh tokens use a key derived from JWT_SECRET, so a refresh token is never
+// accepted as an access token by services that verify with JWT_SECRET.
+const refreshSecret = () => crypto.createHmac('sha256', process.env.JWT_SECRET).update('refresh').digest('hex');
+
+const signAccessToken = (user) => jwt.sign(
+  { sub: String(user._id), email: user.email, role: user.role },
+  process.env.JWT_SECRET,
+  { algorithm: 'HS256', expiresIn: TOKEN_TTL },
+);
+
+const signRefreshToken = (user) => jwt.sign(
+  { sub: String(user._id) },
+  refreshSecret(),
+  { algorithm: 'HS256', expiresIn: REFRESH_TTL },
+);
 
 router.post('/register', async (req, res, next) => {
   try {
@@ -97,12 +116,31 @@ router.post('/login', async (req, res, next) => {
     if (!(await resetFailedLogins(user._id, now))) {
       return res.status(423).json(ACCOUNT_LOCKED);
     }
-    const token = jwt.sign(
-      { sub: String(user._id), email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { algorithm: 'HS256', expiresIn: TOKEN_TTL },
-    );
-    return res.status(200).json({ token, user: user.toPublic() });
+    const token = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
+    return res.status(200).json({ token, refreshToken, user: user.toPublic() });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (typeof refreshToken !== 'string') {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    } catch {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    const user = await User.findById(payload.sub);
+    if (!user) {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    return res.status(200).json({ token: signAccessToken(user) });
   } catch (err) {
     return next(err);
   }
