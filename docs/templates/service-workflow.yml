@@ -1,0 +1,58 @@
+# Template for a thin per-service workflow. Copy to .github/workflows/<service>.yml
+# and replace SERVICE with the service folder (for example restaurant-service).
+# The service's package.json must define a "lint" script.
+# Require "Required CI (SERVICE)" in branch protection.
+name: SERVICE
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.paths.outputs.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: paths
+        with:
+          base: ${{ github.ref }}
+          filters: |
+            service:
+              - 'SERVICE/**'
+              - '.github/workflows/SERVICE.yml'
+              - '.github/workflows/_service-ci.yml'
+
+  service:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    uses: ./.github/workflows/_service-ci.yml
+    with:
+      service: SERVICE
+    secrets: inherit
+
+  ci:
+    name: Required CI (SERVICE)
+    needs: [changes, service]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful CI for selected services
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SERVICE_CHANGED: ${{ needs.changes.outputs.service }}
+          SERVICE_RESULT: ${{ needs.service.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          if [[ "$SERVICE_CHANGED" == true ]]; then
+            test "$SERVICE_RESULT" = success
+          fi
