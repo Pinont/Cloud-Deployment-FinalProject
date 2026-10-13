@@ -117,4 +117,32 @@ describe('account lockout', () => {
     expect(user.failedLogins).toBe(1);
     expect(user.lockUntil).toBeNull();
   });
+
+  describe('parallel logins', () => {
+    const attempt = (password) => request(app).post('/auth/login').send({ ...credentials, password });
+    const state = async () => User.findOne({ email: credentials.email });
+
+    test('parallel wrong passwords all count and lock the account', async () => {
+      await Promise.all(Array.from({ length: 6 }, () => attempt('wrong-password')));
+      const user = await state();
+      expect(user.failedLogins).toBeGreaterThanOrEqual(5);
+      expect(user.lockUntil).not.toBeNull();
+    });
+
+    test('parallel wrong passwords after an expired lock still lock the account', async () => {
+      await failTimes(5);
+      await User.updateOne({ email: credentials.email }, { lockUntil: new Date(Date.now() - 1000) });
+      await Promise.all(Array.from({ length: 5 }, () => attempt('wrong-password')));
+      const user = await state();
+      expect(user.failedLogins).toBe(5);
+      expect(user.lockUntil).not.toBeNull();
+    });
+
+    test('a success overlapping the 5th failure never leaves a lock out of step with the count', async () => {
+      await failTimes(4);
+      await Promise.all([attempt('wrong-password'), attempt(credentials.password)]);
+      const user = await state();
+      expect(user.failedLogins >= 5).toBe(user.lockUntil !== null);
+    });
+  });
 });

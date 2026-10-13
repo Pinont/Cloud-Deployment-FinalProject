@@ -14,6 +14,32 @@ const ACCOUNT_LOCKED = { error: 'Account locked. Try again in 15 minutes' };
 // Compared against when the email is unknown so both failures take similar time.
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_COST);
 
+// No lock, or a lock that has run out.
+const notLocked = (now) => ({ $or: [{ lockUntil: null }, { lockUntil: { $lte: new Date(now) } }] });
+
+// Every step is a conditional update on the saved document (not the snapshot read at the
+// start of the request), so parallel logins cannot lose a failure or overwrite a lock.
+async function recordFailedLogin(id, now) {
+  // An expired lock starts a fresh count. Only the first request matches, so it resets once.
+  await User.updateOne(
+    { _id: id, lockUntil: { $lte: new Date(now) } },
+    { $set: { failedLogins: 0, lockUntil: null } },
+  );
+  const updated = await User.findOneAndUpdate({ _id: id }, { $inc: { failedLogins: 1 } }, { new: true });
+  if (updated && updated.failedLogins >= MAX_FAILED_LOGINS) {
+    // Locks only while the saved count is still at the limit, so a login that reset it meanwhile wins.
+    await User.updateOne(
+      { _id: id, failedLogins: { $gte: MAX_FAILED_LOGINS }, ...notLocked(now) },
+      { $set: { lockUntil: new Date(now + LOCK_MS) } },
+    );
+  }
+}
+
+// A lock set by a parallel failure is left alone: the filter only matches unlocked accounts.
+async function resetFailedLogins(id, now) {
+  await User.updateOne({ _id: id, ...notLocked(now) }, { $set: { failedLogins: 0, lockUntil: null } });
+}
+
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, name } = req.body || {};
@@ -60,22 +86,12 @@ router.post('/login', async (req, res, next) => {
     const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
     if (!user || !ok) {
       if (user) {
-        // An expired lock starts a fresh count; the increment is atomic so parallel guesses all count.
-        const expired = user.lockUntil && user.lockUntil.getTime() <= now;
-        const update = expired
-          ? { $set: { failedLogins: 1, lockUntil: null } }
-          : { $inc: { failedLogins: 1 } };
-        const updated = await User.findByIdAndUpdate(user._id, update, { new: true });
-        if (updated.failedLogins >= MAX_FAILED_LOGINS) {
-          await User.findByIdAndUpdate(user._id, { $set: { lockUntil: new Date(now + LOCK_MS) } });
-        }
+        await recordFailedLogin(user._id, now);
       }
       return res.status(401).json(INVALID_LOGIN);
     }
 
-    if (user.failedLogins > 0 || user.lockUntil) {
-      await User.findByIdAndUpdate(user._id, { $set: { failedLogins: 0, lockUntil: null } });
-    }
+    await resetFailedLogins(user._id, now);
     const token = jwt.sign(
       { sub: String(user._id), email: user.email, role: user.role },
       process.env.JWT_SECRET,
