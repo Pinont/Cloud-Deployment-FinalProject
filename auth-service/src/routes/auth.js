@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
@@ -7,9 +8,27 @@ const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 const BCRYPT_COST = 10;
 const TOKEN_TTL = '1h';
+const REFRESH_TTL = '7d';
 const INVALID_LOGIN = { error: 'Invalid email or password' };
+const INVALID_REFRESH = { error: 'Invalid or expired refresh token' };
 // Compared against when the email is unknown so both failures take similar time.
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_COST);
+
+// Refresh tokens use a key derived from JWT_SECRET, so a refresh token is never
+// accepted as an access token by services that verify with JWT_SECRET.
+const refreshSecret = () => crypto.createHmac('sha256', process.env.JWT_SECRET).update('refresh').digest('hex');
+
+const signAccessToken = (user) => jwt.sign(
+  { sub: String(user._id), email: user.email, role: user.role },
+  process.env.JWT_SECRET,
+  { algorithm: 'HS256', expiresIn: TOKEN_TTL },
+);
+
+const signRefreshToken = (user) => jwt.sign(
+  { sub: String(user._id) },
+  refreshSecret(),
+  { algorithm: 'HS256', expiresIn: REFRESH_TTL },
+);
 
 router.post('/register', async (req, res, next) => {
   try {
@@ -54,12 +73,31 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json(INVALID_LOGIN);
     }
 
-    const token = jwt.sign(
-      { sub: String(user._id), email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { algorithm: 'HS256', expiresIn: TOKEN_TTL },
-    );
-    return res.status(200).json({ token, user: user.toPublic() });
+    const token = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
+    return res.status(200).json({ token, refreshToken, user: user.toPublic() });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (typeof refreshToken !== 'string') {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    } catch {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    const user = await User.findById(payload.sub);
+    if (!user) {
+      return res.status(401).json(INVALID_REFRESH);
+    }
+    return res.status(200).json({ token: signAccessToken(user) });
   } catch (err) {
     return next(err);
   }
