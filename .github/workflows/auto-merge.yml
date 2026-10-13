@@ -1,4 +1,4 @@
-# Turns on GitHub auto-merge for the PM's PRs. GitHub then merges each PR by itself
+# Turns on GitHub auto-merge for every non-draft PR. GitHub then merges each PR by itself
 # once branch protection is satisfied (required check + approving review).
 # This does not approve anything and does not bypass branch protection.
 name: auto-merge
@@ -13,8 +13,8 @@ permissions:
 
 jobs:
   enable:
-    # Only the PM's own, non-draft PRs. Never checks out or runs PR code.
-    if: github.event.pull_request.user.login == 'Pinont' && !github.event.pull_request.draft
+    # Any author, non-draft only. Never checks out or runs PR code.
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - name: Enable auto-merge (squash)
