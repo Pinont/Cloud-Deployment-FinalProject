@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restaurant Reviews</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Restaurant Reviews</h1>
+
+    <section id="guest">
+      <form id="login-form">
+        <h2>Log in</h2>
+        <label>Email <input name="email" type="email" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Log in</button>
+        <p class="error" id="login-error" role="alert"></p>
+      </form>
+
+      <form id="register-form">
+        <h2>Register</h2>
+        <label>Name <input name="name" type="text" autocomplete="name" required></label>
+        <label>Email <input name="email" type="email" autocomplete="email" required></label>
+        <label>Password (min 8 characters) <input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button type="submit">Register</button>
+        <p class="error" id="register-error" role="alert"></p>
+        <p class="ok" id="register-ok" role="status"></p>
+      </form>
+    </section>
+
+    <section id="member" hidden>
+      <h2>Welcome, <span id="user-name"></span></h2>
+      <p><span id="user-email"></span> (<span id="user-role"></span>)</p>
+      <button type="button" id="logout">Log out</button>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
