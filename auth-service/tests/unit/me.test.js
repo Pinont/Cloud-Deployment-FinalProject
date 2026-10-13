@@ -52,6 +52,14 @@ describe('JWT middleware', () => {
     expect(res.status).toBe(401);
   });
 
+  test('token signed with another algorithm (HS384) → 401', async () => {
+    // Existing user's sub and the right secret: only the algorithm differs.
+    const { sub, email, role } = jwt.decode(token);
+    const other = jwt.sign({ sub, email, role }, SECRET, { algorithm: 'HS384' });
+    const res = await request(app).get('/auth/me').set(bearer(other));
+    expect(res.status).toBe(401);
+  });
+
   test('expired token → 401', async () => {
     const expired = jwt.sign({ sub: 'x' }, SECRET, { algorithm: 'HS256', expiresIn: -10 });
     const res = await request(app).get('/auth/me').set(bearer(expired));
