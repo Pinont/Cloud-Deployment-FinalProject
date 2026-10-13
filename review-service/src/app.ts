@@ -42,16 +42,23 @@ export function createApp({
       return;
     }
 
-    const exists = await checkRestaurantExists(restaurantId);
-    if (!exists) {
-      res.status(404).json({ error: 'Restaurant not found' });
+    const normalizedRestaurantId = restaurantId.trim();
+
+    try {
+      const exists = await checkRestaurantExists(normalizedRestaurantId);
+      if (!exists) {
+        res.status(404).json({ error: 'Restaurant not found' });
+        return;
+      }
+    } catch {
+      res.status(503).json({ error: 'Restaurant service unavailable' });
       return;
     }
 
     try {
       const review = await reviewModel.create({
         userId: req.user!.sub,
-        restaurantId: restaurantId.trim(),
+        restaurantId: normalizedRestaurantId,
         rating,
         comment: comment ? comment.trim() : ''
       });

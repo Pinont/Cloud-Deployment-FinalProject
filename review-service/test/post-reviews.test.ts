@@ -297,6 +297,45 @@ test('POST /api/reviews works through gateway path alias', async () => {
     .expect(201);
 });
 
+test('POST /reviews returns 503 when restaurant-service throws an outage error', async () => {
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    checkRestaurantExists: async () => {
+      throw new Error('restaurant-service network timeout');
+    }
+  });
+  const token = createToken('user-1');
+
+  const res = await request(app)
+    .post('/reviews')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'rest-1', rating: 4 })
+    .expect(503);
+
+  assert.deepEqual(res.body, { error: 'Restaurant service unavailable' });
+});
+
+test('POST /reviews trims whitespace from restaurantId for existence check and storage', async () => {
+  let checkedId = '';
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    checkRestaurantExists: async (id) => {
+      checkedId = id;
+      return true;
+    }
+  });
+  const token = createToken('user-1');
+
+  const res = await request(app)
+    .post('/reviews')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: '  rest-padded  ', rating: 5 })
+    .expect(201);
+
+  assert.equal(checkedId, 'rest-padded');
+  assert.equal(res.body.restaurantId, 'rest-padded');
+});
+
 test('createApp throws error if JWT_SECRET is not provided', () => {
   assert.throws(() => {
     createApp({ jwtSecret: '' });

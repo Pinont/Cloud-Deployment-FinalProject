@@ -7,8 +7,9 @@ const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/review-db';
 async function startServer(): Promise<void> {
   try {
     await mongoose.connect(mongoUri);
+    const redactedUri = mongoUri.replace(/\/\/[^@/]*@/, '//***@');
     // eslint-disable-next-line no-console
-    console.log(`review-service connected to MongoDB at ${mongoUri}`);
+    console.log(`review-service connected to MongoDB at ${redactedUri}`);
 
     const app = createApp();
     app.listen(port, () => {
