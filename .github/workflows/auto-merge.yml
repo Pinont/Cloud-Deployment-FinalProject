@@ -1,6 +1,11 @@
 # Turns on GitHub auto-merge for every non-draft PR. GitHub then merges each PR by itself
 # once branch protection is satisfied (required check + approving review).
 # This does not approve anything and does not bypass branch protection.
+#
+# Needs repo secret AUTO_MERGE_TOKEN: a fine-grained PAT (or GitHub App token) with
+# Contents and Pull requests read/write. The default GITHUB_TOKEN is not used on purpose:
+# a merge made with it does not start the push workflows, so the Docker image would
+# never be published from main.
 name: auto-merge
 
 on:
@@ -19,6 +24,11 @@ jobs:
     steps:
       - name: Enable auto-merge (squash)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Repo secret AUTO_MERGE_TOKEN is not set; see the comment at the top of this file."
+            exit 1
+          fi
+          gh pr merge --auto --squash "$PR_URL"
