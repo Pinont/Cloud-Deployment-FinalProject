@@ -3,23 +3,52 @@ name: auth-service
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'auth-service/**'
-      - '.github/workflows/auth-service.yml'
-      - '.github/workflows/_service-ci.yml'
   pull_request:
     branches: [main, develop]
-    paths:
-      - 'auth-service/**'
-      - '.github/workflows/auth-service.yml'
-      - '.github/workflows/_service-ci.yml'
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
-  ci:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.paths.outputs.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: paths
+        with:
+          base: ${{ github.ref }}
+          filters: |
+            service:
+              - 'auth-service/**'
+              - '.github/workflows/auth-service.yml'
+              - '.github/workflows/_service-ci.yml'
+
+  service:
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
     uses: ./.github/workflows/_service-ci.yml
     with:
       service: auth-service
     secrets: inherit
+
+  ci:
+    name: Required CI (auth-service)
+    needs: [changes, service]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful CI for selected services
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SERVICE_CHANGED: ${{ needs.changes.outputs.service }}
+          SERVICE_RESULT: ${{ needs.service.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          if [[ "$SERVICE_CHANGED" == true ]]; then
+            test "$SERVICE_RESULT" = success
+          fi
