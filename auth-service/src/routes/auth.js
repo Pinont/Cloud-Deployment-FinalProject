@@ -1,9 +1,12 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const requireAuth = require('../middleware/auth');
+
+const { requireRole } = requireAuth;
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
@@ -11,6 +14,7 @@ const BCRYPT_COST = 10;
 const TOKEN_TTL = '1h';
 const REFRESH_TTL = '7d';
 const INVALID_LOGIN = { error: 'Invalid email or password' };
+const ROLES = ['user', 'owner', 'admin'];
 const INVALID_REFRESH = { error: 'Invalid or expired refresh token' };
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MS = 15 * 60 * 1000;
@@ -172,6 +176,36 @@ router.put('/me', requireAuth, async (req, res, next) => {
     );
     if (!user) {
       return res.status(401).json({ error: 'Missing or invalid token' });
+    }
+    return res.status(200).json(user.toPublic());
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Admin-only. The only way to change a role over HTTP; the first admin is made with
+// `npm run set-role -- <email> admin` (see scripts/set-role.js). Admins cannot change their
+// own role, so at least one admin always remains.
+router.put('/users/:id/role', requireAuth, requireRole('admin'), async (req, res, next) => {
+  try {
+    const { role } = req.body || {};
+    if (!ROLES.includes(role)) {
+      return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: 'You cannot change your own role' });
+    }
+    // The token may be up to an hour old, so confirm the caller is still an admin in the database.
+    const caller = await User.findById(req.user.id);
+    if (!caller || caller.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
     return res.status(200).json(user.toPublic());
   } catch (err) {

@@ -22,4 +22,20 @@ function requireAuth(req, res, next) {
   }
 }
 
+/**
+ * Use after requireAuth: allows the request only when the JWT's role is one of `roles`
+ * (e.g. `app.delete('/x/:id', requireAuth, requireRole('owner', 'admin'), handler)`), else 403.
+ * The role comes from the token, so a role change applies once the user gets a new token
+ * (login or refresh, at most 1 hour). Check the database as well for sensitive actions.
+ */
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return next();
+  };
+}
+
 module.exports = requireAuth;
+module.exports.requireRole = requireRole;
