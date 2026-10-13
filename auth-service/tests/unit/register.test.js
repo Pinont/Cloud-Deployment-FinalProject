@@ -46,7 +46,34 @@ describe('POST /auth/register', () => {
   });
 
   test.each([
+    ['ASCII', 'a'.repeat(73)],
+    ['multibyte', 'é'.repeat(37)],
+  ])('rejects a %s password exceeding 72 bytes before hashing', async (_label, password) => {
+    const hash = jest.spyOn(bcrypt, 'hash');
+    try {
+      const res = await request(app).post('/auth/register').send({ ...valid, password });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: 'Password must be at least 8 characters and at most 72 bytes' });
+      expect(hash).not.toHaveBeenCalled();
+      expect(await User.countDocuments()).toBe(0);
+    } finally {
+      hash.mockRestore();
+    }
+  });
+
+  test.each([
+    ['ASCII', 'a'.repeat(72)],
+    ['multibyte', 'é'.repeat(36)],
+  ])('accepts a %s password at the 72-byte limit', async (_label, password) => {
+    const res = await request(app).post('/auth/register').send({ ...valid, password });
+    expect(res.status).toBe(201);
+    const stored = await User.findOne({ email: 'diner@example.com' });
+    expect(await bcrypt.compare(password, stored.passwordHash)).toBe(true);
+  });
+
+  test.each([
     ['invalid email', { email: 'not-an-email' }],
+    ['email with a trailing dot', { email: 'a@example.com.' }],
     ['missing email', { email: undefined }],
     ['empty name', { name: '   ' }],
     ['missing name', { name: undefined }],

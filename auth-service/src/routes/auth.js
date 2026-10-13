@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
 const router = express.Router();
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 const BCRYPT_COST = 10;
 
 router.post('/register', async (req, res, next) => {
@@ -12,8 +12,8 @@ router.post('/register', async (req, res, next) => {
     if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
       return res.status(400).json({ error: 'Invalid email' });
     }
-    if (typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (typeof password !== 'string' || password.length < 8 || bcrypt.truncates(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters and at most 72 bytes' });
     }
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Name is required' });
