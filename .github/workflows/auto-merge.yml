@@ -1,0 +1,24 @@
+# Turns on GitHub auto-merge for the PM's PRs. GitHub then merges each PR by itself
+# once branch protection is satisfied (required check + approving review).
+# This does not approve anything and does not bypass branch protection.
+name: auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    # Only the PM's own, non-draft PRs. Never checks out or runs PR code.
+    if: github.event.pull_request.user.login == 'Pinont' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
