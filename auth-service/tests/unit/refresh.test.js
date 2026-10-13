@@ -37,6 +37,7 @@ describe('POST /auth/refresh', () => {
     expect(typeof login.refreshToken).toBe('string');
     const payload = jwt.verify(login.refreshToken, refreshKey, { algorithms: ['HS256'] });
     expect(payload.sub).toBe(String(login.user.id));
+    expect(payload.exp - payload.iat).toBe(604800);
   });
 
   test('the refresh token is not accepted as an access token', () => {
