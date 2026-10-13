@@ -1,0 +1,76 @@
+# One command runs the whole system: docker compose up -d
+# Images come from Docker Hub (pushed by CI from main). Set values in .env (see .env.example).
+# Rollback: set IMAGE_TAG=sha-<commit> in .env, then docker compose up -d.
+# Compose service names (auth, restaurant, review, favorite) match the nginx upstreams.
+
+x-service-env: &service-env
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - auth
+      - restaurant
+      - review
+      - favorite
+
+  auth:
+    image: ${DOCKERHUB_USERNAME:?set DOCKERHUB_USERNAME in .env}/auth-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *service-env
+      PORT: 3001
+      MONGO_URI: mongodb://mongo:27017/auth-db
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  restaurant:
+    image: ${DOCKERHUB_USERNAME}/restaurant-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *service-env
+      PORT: 3002
+      MONGO_URI: mongodb://mongo:27017/restaurant-db
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  review:
+    image: ${DOCKERHUB_USERNAME}/review-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *service-env
+      PORT: 3003
+      MONGO_URI: mongodb://mongo:27017/review-db
+      RESTAURANT_SERVICE_URL: http://restaurant:3002
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  favorite:
+    image: ${DOCKERHUB_USERNAME}/favorite-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *service-env
+      PORT: 3004
+      MONGO_URI: mongodb://mongo:27017/favorite-db
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # One MongoDB server, a separate database per service (auth-db, restaurant-db, review-db, favorite-db).
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo-data:
