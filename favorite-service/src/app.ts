@@ -74,5 +74,19 @@ export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }
     res.json(userFavorites);
   });
 
+  app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, (req, res) => {
+    const favoriteIndex = favorites.findIndex(
+      (favorite) => favorite.userId === req.user?.sub && favorite.restaurantId === req.params.restaurantId
+    );
+
+    if (favoriteIndex === -1) {
+      res.status(404).json({ message: 'Favorite not found' });
+      return;
+    }
+
+    favorites.splice(favoriteIndex, 1);
+    res.status(204).send();
+  });
+
   return app;
 }
