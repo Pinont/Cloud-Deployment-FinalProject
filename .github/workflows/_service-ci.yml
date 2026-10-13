@@ -33,8 +33,8 @@ jobs:
 
       - run: npm ci
 
-      # Each service defines a "lint" script (ESLint).
-      - run: npm run lint --if-present
+      # Every caller must define a "lint" script (ESLint) in its package.json.
+      - run: npm run lint
 
       # Coverage threshold (70%) is set in the service's Jest config; a miss fails this step.
       - run: npm test
@@ -45,6 +45,9 @@ jobs:
     # Only a push to main publishes an image; PRs and other branches stop after tests.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ inputs.service }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -56,9 +59,22 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
+        id: build
         with:
           context: ${{ inputs.service }}
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.service }}:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.service }}:sha-${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.service }}:sha-${{ github.sha }}
+
+      - name: Update latest only for the current main commit
+        shell: bash
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.service }}
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          main_sha="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          if [[ "$main_sha" != "$BUILD_SHA" ]]; then
+            echo "Main has moved on; leaving latest unchanged."
+            exit 0
+          fi
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$BUILD_DIGEST"
