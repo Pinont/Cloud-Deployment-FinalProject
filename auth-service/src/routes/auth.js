@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
@@ -60,6 +61,39 @@ router.post('/login', async (req, res, next) => {
       { algorithm: 'HS256', expiresIn: TOKEN_TTL },
     );
     return res.status(200).json({ token, user: user.toPublic() });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/me', requireAuth, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(401).json({ error: 'Missing or invalid token' });
+    }
+    return res.status(200).json(user.toPublic());
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Only `name` can be changed: email and role are immutable.
+router.put('/me', requireAuth, async (req, res, next) => {
+  try {
+    const { name } = req.body || {};
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { name },
+      { new: true, runValidators: true },
+    );
+    if (!user) {
+      return res.status(401).json({ error: 'Missing or invalid token' });
+    }
+    return res.status(200).json(user.toPublic());
   } catch (err) {
     return next(err);
   }
