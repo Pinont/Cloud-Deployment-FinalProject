@@ -106,6 +106,21 @@ describe('PUT /auth/users/:id/role', () => {
     expect((await User.findById(admin.id)).role).toBe('admin');
   });
 
+  test('an admin cannot change their own role by writing the id in upper case → 400', async () => {
+    const admin = await makeUser('admin@example.com', 'admin');
+    const res = await setRole(admin, admin.id.toUpperCase(), 'user');
+    expect(res.status).toBe(400);
+    expect((await User.findById(admin.id)).role).toBe('admin');
+  });
+
+  test('two admins demoting each other at the same time never leave no admin', async () => {
+    const a = await makeUser('a@example.com', 'admin');
+    const b = await makeUser('b@example.com', 'admin');
+    const results = await Promise.all([setRole(a, b.id, 'user'), setRole(b, a.id, 'user')]);
+    expect(await User.countDocuments({ role: 'admin' })).toBeGreaterThanOrEqual(1);
+    results.forEach((res) => expect([200, 403, 409]).toContain(res.status));
+  });
+
   test('role cannot be changed through PUT /auth/me', async () => {
     const diner = await makeUser('diner@example.com');
     await request(app).put('/auth/me').set(bearer(diner.token)).send({ name: 'Diner', role: 'admin' });

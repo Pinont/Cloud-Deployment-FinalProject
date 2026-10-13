@@ -195,7 +195,9 @@ router.put('/users/:id/role', requireAuth, requireRole('admin'), async (req, res
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid user id' });
     }
-    if (req.params.id === req.user.id) {
+    // Compare as ObjectIds: the id in the URL may be written in upper case.
+    const targetId = new mongoose.Types.ObjectId(req.params.id);
+    if (targetId.equals(req.user.id)) {
       return res.status(400).json({ error: 'You cannot change your own role' });
     }
     // The token may be up to an hour old, so confirm the caller is still an admin in the database.
@@ -203,10 +205,17 @@ router.put('/users/:id/role', requireAuth, requireRole('admin'), async (req, res
     if (!caller || caller.role !== 'admin') {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
+    const user = await User.findByIdAndUpdate(targetId, { role }, { new: false });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    // Two admins demoting each other at the same time would both pass the checks above, so
+    // after removing an admin, undo it if that left no admin at all.
+    if (user.role === 'admin' && role !== 'admin' && (await User.countDocuments({ role: 'admin' })) === 0) {
+      await User.updateOne({ _id: targetId, role }, { role: 'admin' });
+      return res.status(409).json({ error: 'There must be at least one admin' });
+    }
+    user.role = role;
     return res.status(200).json(user.toPublic());
   } catch (err) {
     return next(err);
