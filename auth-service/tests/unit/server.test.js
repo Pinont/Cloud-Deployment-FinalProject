@@ -9,6 +9,9 @@ const User = require('../../src/models/User');
 const originalEnv = process.env;
 const flushPromises = () => new Promise(setImmediate);
 
+/**
+ * Load the server in an isolated module registry to exercise startup with mocks.
+ */
 function startServer() {
   jest.isolateModules(() => require('../../src/server'));
 }
