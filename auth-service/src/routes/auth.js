@@ -36,8 +36,10 @@ async function recordFailedLogin(id, now) {
 }
 
 // A lock set by a parallel failure is left alone: the filter only matches unlocked accounts.
+// Returns false when it did not match, i.e. the account was locked after the first lock check.
 async function resetFailedLogins(id, now) {
-  await User.updateOne({ _id: id, ...notLocked(now) }, { $set: { failedLogins: 0, lockUntil: null } });
+  const result = await User.updateOne({ _id: id, ...notLocked(now) }, { $set: { failedLogins: 0, lockUntil: null } });
+  return result.matchedCount > 0;
 }
 
 router.post('/register', async (req, res, next) => {
@@ -91,7 +93,9 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json(INVALID_LOGIN);
     }
 
-    await resetFailedLogins(user._id, now);
+    if (!(await resetFailedLogins(user._id, now))) {
+      return res.status(423).json(ACCOUNT_LOCKED);
+    }
     const token = jwt.sign(
       { sub: String(user._id), email: user.email, role: user.role },
       process.env.JWT_SECRET,

@@ -138,6 +138,16 @@ describe('account lockout', () => {
       expect(user.lockUntil).not.toBeNull();
     });
 
+    test('a correct password gets no token when a parallel failure locks the account after the first lock check', async () => {
+      const stale = await state();
+      await User.updateOne({ email: credentials.email }, { failedLogins: 5, lockUntil: new Date(Date.now() + 15 * 60 * 1000) });
+      const spy = jest.spyOn(User, 'findOne').mockResolvedValueOnce(stale);
+      const res = await attempt(credentials.password);
+      spy.mockRestore();
+      expect(res.status).toBe(423);
+      expect(res.body.token).toBeUndefined();
+    });
+
     test('a success overlapping the 5th failure never leaves a lock out of step with the count', async () => {
       await failTimes(4);
       await Promise.all([attempt('wrong-password'), attempt(credentials.password)]);
