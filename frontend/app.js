@@ -3,13 +3,18 @@ const TOKEN_KEY = 'token';
 
 const $ = (id) => document.getElementById(id);
 
+// Never throws: a network failure comes back as status 0 so callers can show a message.
 async function api(path, options = {}) {
-  const res = await fetch(`/api/auth${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-  });
-  const body = await res.json().catch(() => ({}));
-  return { status: res.status, ok: res.ok, body };
+  try {
+    const res = await fetch(`/api/auth${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+    });
+    const body = await res.json().catch(() => ({}));
+    return { status: res.status, ok: res.ok, body };
+  } catch {
+    return { status: 0, ok: false, body: { error: 'Cannot reach the server. Please try again.' } };
+  }
 }
 
 function showUser(user) {
@@ -26,10 +31,14 @@ function showGuest() {
 }
 
 // Loads the current user with the stored token. `fallback` is used if /auth/me is unavailable.
+// Only the latest call may change the view, so a slow older request cannot undo a newer login.
+let latestLoad = 0;
 async function loadUser(fallback) {
+  const current = ++latestLoad;
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) return showGuest();
   const { status, ok, body } = await api('/me', { headers: { Authorization: `Bearer ${token}` } });
+  if (current !== latestLoad) return undefined;
   if (ok) return showUser(body);
   if (status === 401) {
     localStorage.removeItem(TOKEN_KEY);
