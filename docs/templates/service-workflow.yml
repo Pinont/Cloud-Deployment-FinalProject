@@ -1,0 +1,24 @@
+# Template for a thin per-service workflow. Copy to .github/workflows/<service>.yml
+# and replace SERVICE (for example restaurant-service) in the three marked places.
+name: SERVICE
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'SERVICE/**'
+      - '.github/workflows/SERVICE.yml'
+      - '.github/workflows/_service-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'SERVICE/**'
+      - '.github/workflows/SERVICE.yml'
+      - '.github/workflows/_service-ci.yml'
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_service-ci.yml
+    with:
+      service: SERVICE
+    secrets: inherit
