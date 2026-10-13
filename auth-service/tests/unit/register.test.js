@@ -72,11 +72,3 @@ describe('POST /auth/register', () => {
     expect(res.status).toBe(400);
   });
 });
-
-describe('GET /health', () => {
-  test('returns ok', async () => {
-    const res = await request(app).get('/health');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok' });
-  });
-});

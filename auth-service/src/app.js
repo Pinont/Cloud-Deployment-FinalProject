@@ -4,7 +4,6 @@ const authRoutes = require('./routes/auth');
 const app = express();
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/auth', authRoutes);
 
 // eslint-disable-next-line no-unused-vars
