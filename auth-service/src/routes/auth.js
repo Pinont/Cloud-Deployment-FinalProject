@@ -1,10 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 const BCRYPT_COST = 10;
+const TOKEN_TTL = '1h';
+const INVALID_LOGIN = { error: 'Invalid email or password' };
+// Compared against when the email is unknown so both failures take similar time.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_COST);
 
 router.post('/register', async (req, res, next) => {
   try {
@@ -32,6 +37,30 @@ router.post('/register', async (req, res, next) => {
     if (err.code === 11000) {
       return res.status(409).json({ error: 'Email already registered' });
     }
+    return next(err);
+  }
+});
+
+router.post('/login', async (req, res, next) => {
+  try {
+    const { email, password } = req.body || {};
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(401).json(INVALID_LOGIN);
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
+    if (!user || !ok) {
+      return res.status(401).json(INVALID_LOGIN);
+    }
+
+    const token = jwt.sign(
+      { sub: String(user._id), email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { algorithm: 'HS256', expiresIn: TOKEN_TTL },
+    );
+    return res.status(200).json({ token, user: user.toPublic() });
+  } catch (err) {
     return next(err);
   }
 });

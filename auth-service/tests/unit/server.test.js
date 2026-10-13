@@ -83,3 +83,17 @@ test('exits without logging success when the listener fails', async () => {
   expect(console.log).not.toHaveBeenCalled();
   expect(process.exit).toHaveBeenCalledWith(1);
 });
+
+test.each([
+  ['MONGO_URI'],
+  ['JWT_SECRET'],
+])('exits without connecting or listening when %s is missing or empty', (name) => {
+  process.env[name] = '';
+
+  startServer();
+
+  expect(console.error).toHaveBeenCalledWith(`${name} is required`);
+  expect(process.exit).toHaveBeenCalledWith(1);
+  expect(mongoose.connect).not.toHaveBeenCalled();
+  expect(app.listen).not.toHaveBeenCalled();
+});
