@@ -8,6 +8,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 const BCRYPT_COST = 10;
 const TOKEN_TTL = '1h';
 const INVALID_LOGIN = { error: 'Invalid email or password' };
+const MAX_FAILED_LOGINS = 5;
+const LOCK_MS = 15 * 60 * 1000;
+const ACCOUNT_LOCKED = { error: 'Account locked. Try again in 15 minutes' };
 // Compared against when the email is unknown so both failures take similar time.
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_COST);
 
@@ -49,11 +52,30 @@ router.post('/login', async (req, res, next) => {
     }
 
     const user = await User.findOne({ email: email.trim().toLowerCase() });
+    const now = Date.now();
+    if (user && user.lockUntil && user.lockUntil.getTime() > now) {
+      return res.status(423).json(ACCOUNT_LOCKED);
+    }
+
     const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
     if (!user || !ok) {
+      if (user) {
+        // An expired lock starts a fresh count; the increment is atomic so parallel guesses all count.
+        const expired = user.lockUntil && user.lockUntil.getTime() <= now;
+        const update = expired
+          ? { $set: { failedLogins: 1, lockUntil: null } }
+          : { $inc: { failedLogins: 1 } };
+        const updated = await User.findByIdAndUpdate(user._id, update, { new: true });
+        if (updated.failedLogins >= MAX_FAILED_LOGINS) {
+          await User.findByIdAndUpdate(user._id, { $set: { lockUntil: new Date(now + LOCK_MS) } });
+        }
+      }
       return res.status(401).json(INVALID_LOGIN);
     }
 
+    if (user.failedLogins > 0 || user.lockUntil) {
+      await User.findByIdAndUpdate(user._id, { $set: { failedLogins: 0, lockUntil: null } });
+    }
     const token = jwt.sign(
       { sub: String(user._id), email: user.email, role: user.role },
       process.env.JWT_SECRET,

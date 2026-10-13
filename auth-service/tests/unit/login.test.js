@@ -65,3 +65,56 @@ describe('POST /auth/login', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('account lockout', () => {
+  const wrong = { ...credentials, password: 'wrong-password' };
+  const failTimes = async (n) => {
+    for (let i = 0; i < n; i += 1) {
+      await request(app).post('/auth/login').send(wrong);
+    }
+  };
+
+  test('failedLogins increments on a wrong password and resets on success', async () => {
+    await failTimes(2);
+    expect((await User.findOne({ email: credentials.email })).failedLogins).toBe(2);
+    const ok = await request(app).post('/auth/login').send(credentials);
+    expect(ok.status).toBe(200);
+    expect((await User.findOne({ email: credentials.email })).failedLogins).toBe(0);
+  });
+
+  test('4 failures do not lock the account', async () => {
+    await failTimes(4);
+    const res = await request(app).post('/auth/login').send(credentials);
+    expect(res.status).toBe(200);
+  });
+
+  test('5 failures lock the account even for the right password', async () => {
+    await failTimes(5);
+    const res = await request(app).post('/auth/login').send(credentials);
+    expect(res.status).toBe(423);
+    expect(res.body.token).toBeUndefined();
+    const user = await User.findOne({ email: credentials.email });
+    const msLeft = user.lockUntil.getTime() - Date.now();
+    expect(msLeft).toBeGreaterThan(14 * 60 * 1000);
+    expect(msLeft).toBeLessThanOrEqual(15 * 60 * 1000);
+  });
+
+  test('the account unlocks once the 15 minutes have passed', async () => {
+    await failTimes(5);
+    await User.updateOne({ email: credentials.email }, { lockUntil: new Date(Date.now() - 1000) });
+    const res = await request(app).post('/auth/login').send(credentials);
+    expect(res.status).toBe(200);
+    const user = await User.findOne({ email: credentials.email });
+    expect(user.failedLogins).toBe(0);
+    expect(user.lockUntil).toBeNull();
+  });
+
+  test('a wrong password after an expired lock starts a fresh count', async () => {
+    await failTimes(5);
+    await User.updateOne({ email: credentials.email }, { lockUntil: new Date(Date.now() - 1000) });
+    await failTimes(1);
+    const user = await User.findOne({ email: credentials.email });
+    expect(user.failedLogins).toBe(1);
+    expect(user.lockUntil).toBeNull();
+  });
+});
