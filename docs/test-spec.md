@@ -102,5 +102,5 @@ Source: ticket #15 (`[review] DELETE /reviews/:id`).
 | Stage | Runs | Gate |
 |---|---|---|
 | PR and push, path-filtered per service | Unit tests of that service with coverage | 100% pass, coverage ≥ 70% |
-| `main` only, after the gate | Docker build and push (`latest`, `sha-<commit>`) | Previous stage green |
-| `e2e.yml` | IT-01..03 and E2E-01 on the pulled images | 100% pass |
+| `main` only, after the unit gate | Docker build and push with a candidate tag | Unit tests 100% pass, coverage ≥ 70% |
+| `e2e.yml` | IT-01..03 and E2E-01 on the pulled candidate images; then promote those same images to `latest` and `sha-<commit>` | Publish release tags only after all integration and E2E tests pass |
