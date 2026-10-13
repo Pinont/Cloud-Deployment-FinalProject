@@ -17,7 +17,7 @@ tools (`issue_write`, `issue_read`, `list_issues`, `add_issue_comment`, `sub_iss
 - Create tickets in dependency order so `Depends on #n` resolves. One ticket per feature.
 - Assign to the owner of the service. Do not create issues until the PM has approved the drafts.
 - Do not commit or push without the PM asking.
-- **Pull requests:** assign every PR to all four members (`Pinont`, `Hydra07188`, `flogame55`, `phoo3011`). Only create a PR when the PM asks.
+- **Auto-merge:** right after `gh pr create`, run `gh pr merge --auto --squash <n>`. GitHub then merges the PR by itself once branch protection is met (required check `Required CI (auth-service)` plus 1 approving review). Greptile or the PM supplies the approval; Greptile never merges and does not auto-approve auth or CI changes, so those wait for the PM. If the PR is already mergeable (`mergeStateStatus` is `CLEAN`), `--auto` is rejected: tell the PM and let them merge. Prerequisite: the `Required CI (auth-service)` check is produced only by `.github/workflows/auth-service.yml` (it calls `_service-ci.yml`, which does nothing on its own). If that file is missing from `main`, the check never arrives and the PR waits forever: hand the PR back to the PM instead of enabling auto-merge. Do not add a workflow that enables auto-merge (the PM declined it).
 
 ## Conventions
 
