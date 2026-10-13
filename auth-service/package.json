@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "lint": "eslint .",
+    "set-role": "node scripts/set-role.js",
     "test": "jest --coverage"
   },
   "engines": {
