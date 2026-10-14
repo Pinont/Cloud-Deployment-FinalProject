@@ -216,7 +216,7 @@ function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Prom
     }
   });
   restaurantQueues.set(restaurantId, cleanup);
-  return current;
+  return cleanup as Promise<T>;
 }
 
   router.delete('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {

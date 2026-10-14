@@ -292,3 +292,31 @@ test('RV-DEL-08: Deletion succeeds with 200 even if rating computation fails, re
   }
 });
 
+test('RV-DEL-09: If findByIdAndDelete rejects with an error, the route returns 500 cleanly without crashing', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+
+  const review = await Review.create({
+    userId: 'author-db-fail',
+    restaurantId: 'rest-db-fail',
+    rating: 5,
+    comment: 'DB fail test'
+  });
+
+  const originalFindByIdAndDelete = Review.findByIdAndDelete;
+  Review.findByIdAndDelete = (() => {
+    return Promise.reject(new Error('Database write failure'));
+  }) as any;
+
+  try {
+    const res = await request(app)
+      .delete(`/reviews/${review._id}`)
+      .set('Authorization', `Bearer ${createToken('author-db-fail')}`)
+      .expect(500);
+
+    assert.strictEqual(res.body.error, 'Internal server error');
+  } finally {
+    Review.findByIdAndDelete = originalFindByIdAndDelete;
+  }
+});
+
+
