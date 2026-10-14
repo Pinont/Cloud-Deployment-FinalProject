@@ -86,7 +86,7 @@ test('FV-02.1: POST /favorites rejects overlapping duplicate saves for the same 
   assert.equal(favorites.length, 1);
 });
 
-test('IT-03: POST /favorites returns 404 when the restaurant does not exist', async () => {
+test('FV-POST-404: POST /favorites returns 404 when the restaurant does not exist', async () => {
   const favorites: Favorite[] = [];
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
