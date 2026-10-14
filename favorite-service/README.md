@@ -28,3 +28,14 @@ npm run test:integration
 The runner uses `http://localhost/api` by default. Set
 `INTEGRATION_BASE_URL` when the gateway uses another URL. It fails when
 `INTEGRATION_JWT` is missing instead of silently skipping the integration test.
+
+## Favorite lists
+
+Favorites are stored in the default list `ร้านโปรด` when `listName` is omitted.
+Pass a non-empty `listName` to `POST /favorites` to save a restaurant in a
+named list. The same restaurant can be saved in multiple lists, but only once
+per list. Filter the current user's favorites with
+`GET /favorites/me?listName=<name>`.
+Use the same `listName` query parameter with
+`DELETE /favorites/:restaurantId?listName=<name>` to remove a favorite from a
+specific list. If omitted, the default list is used.

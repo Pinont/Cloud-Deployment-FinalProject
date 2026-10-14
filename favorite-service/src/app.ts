@@ -5,6 +5,7 @@ import { createRestaurantClient, type RestaurantExistsFn } from './restaurantCli
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
+export const DEFAULT_LIST_NAME = 'ร้านโปรด';
 
 export interface Favorite {
   userId: string;
@@ -18,6 +19,10 @@ interface AuthenticatedPayload extends JwtPayload {
 
 function isDuplicateKeyError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
+}
+
+function getListName(favorite: Favorite): string {
+  return favorite.listName ?? DEFAULT_LIST_NAME;
 }
 
 declare global {
@@ -100,7 +105,7 @@ export function createApp({
     }
 
     const normalizedRestaurantId = restaurantId.trim();
-    const normalizedListName = listName === undefined ? 'ร้านโปรด' : listName.trim();
+    const normalizedListName = listName === undefined ? DEFAULT_LIST_NAME : listName.trim();
 
     try {
       const exists = await checkRestaurantExists(normalizedRestaurantId);
@@ -117,6 +122,7 @@ export function createApp({
       favorites.some(
         (favorite) =>
           favorite.userId === req.user?.sub && favorite.restaurantId === normalizedRestaurantId
+            && getListName(favorite) === normalizedListName
       )
     ) {
       res.status(409).json({ message: 'Restaurant is already in favorites' });
@@ -147,13 +153,34 @@ export function createApp({
   });
 
   app.get('/favorites/me', rateLimiter, requireAuth, (req, res) => {
-    const userFavorites = favorites.filter((favorite) => favorite.userId === req.user?.sub);
+    const { listName } = req.query;
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedListName = typeof listName === 'string' ? listName.trim() : undefined;
+    const userFavorites = favorites.filter(
+      (favorite) =>
+        favorite.userId === req.user?.sub &&
+        (normalizedListName === undefined || getListName(favorite) === normalizedListName)
+    );
     res.json(userFavorites);
   });
 
   app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { listName } = req.query;
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedListName = typeof listName === 'string' ? listName.trim() : DEFAULT_LIST_NAME;
     const favoriteIndex = favorites.findIndex(
-      (favorite) => favorite.userId === req.user?.sub && favorite.restaurantId === req.params.restaurantId
+      (favorite) =>
+        favorite.userId === req.user?.sub &&
+        favorite.restaurantId === req.params.restaurantId &&
+        getListName(favorite) === normalizedListName
     );
 
     if (favoriteIndex === -1) {
