@@ -1,0 +1,11 @@
+# Dev override: build images from the local folders instead of pulling from Docker Hub.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  auth:
+    build: ./auth-service
+  restaurant:
+    build: ./restaurant-service
+  review:
+    build: ./review-service
+  favorite:
+    build: ./favorite-service
