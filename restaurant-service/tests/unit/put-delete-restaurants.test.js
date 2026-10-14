@@ -85,6 +85,19 @@ describe('PUT /restaurants/:id', () => {
     expect(stored.priceRange).toBe(3);
   });
 
+  test('owner updates category and address → 200, saved', async () => {
+    const res = await request(app)
+      .put(`/restaurants/${restaurant.id}`)
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ category: 'Thai', address: 'Chiang Mai' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ category: 'thai', address: 'Chiang Mai', name: 'Shabu House' });
+    const stored = await Restaurant.findById(restaurant.id);
+    expect(stored.category).toBe('thai');
+    expect(stored.address).toBe('Chiang Mai');
+  });
+
   test('owner cannot change ownerId, avgRating or reviewCount', async () => {
     const res = await request(app)
       .put(`/restaurants/${restaurant.id}`)
