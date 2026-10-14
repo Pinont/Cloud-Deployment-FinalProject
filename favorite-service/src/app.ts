@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { createRestaurantClient, type RestaurantExistsFn } from './restaurantClient';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
@@ -8,10 +9,15 @@ const RATE_LIMIT_MAX_REQUESTS = 60;
 export interface Favorite {
   userId: string;
   restaurantId: string;
+  listName?: string;
 }
 
 interface AuthenticatedPayload extends JwtPayload {
   sub: string;
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
 }
 
 declare global {
@@ -52,9 +58,18 @@ function authenticate(jwtSecret: string) {
 export interface CreateAppOptions {
   favorites?: Favorite[];
   jwtSecret?: string;
+  checkRestaurantExists?: RestaurantExistsFn;
+  persistFavorite?: (favorite: Favorite) => Promise<void>;
+  deleteFavorite?: (favorite: Favorite) => Promise<void>;
 }
 
-export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }: CreateAppOptions = {}) {
+export function createApp({
+  favorites = [],
+  jwtSecret = process.env.JWT_SECRET,
+  checkRestaurantExists = createRestaurantClient(),
+  persistFavorite,
+  deleteFavorite
+}: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
   }
@@ -69,12 +84,74 @@ export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }
   });
   const requireAuth = authenticate(jwtSecret);
 
+  app.use(express.json());
+
+  app.post('/favorites', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { restaurantId, listName } = req.body || {};
+
+    if (typeof restaurantId !== 'string' || restaurantId.trim() === '') {
+      res.status(400).json({ message: 'restaurantId is required' });
+      return;
+    }
+
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedRestaurantId = restaurantId.trim();
+    const normalizedListName = listName === undefined ? 'ร้านโปรด' : listName.trim();
+
+    try {
+      const exists = await checkRestaurantExists(normalizedRestaurantId);
+      if (!exists) {
+        res.status(404).json({ message: 'Restaurant not found' });
+        return;
+      }
+    } catch {
+      res.status(503).json({ message: 'Restaurant service unavailable' });
+      return;
+    }
+
+    if (
+      favorites.some(
+        (favorite) =>
+          favorite.userId === req.user?.sub && favorite.restaurantId === normalizedRestaurantId
+      )
+    ) {
+      res.status(409).json({ message: 'Restaurant is already in favorites' });
+      return;
+    }
+
+    const favorite: Favorite = {
+      userId: req.user!.sub,
+      restaurantId: normalizedRestaurantId,
+      listName: normalizedListName
+    };
+
+    if (persistFavorite) {
+      try {
+        await persistFavorite(favorite);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          res.status(409).json({ message: 'Restaurant is already in favorites' });
+          return;
+        }
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
+    }
+
+    favorites.push(favorite);
+    res.status(201).json(favorite);
+  });
+
   app.get('/favorites/me', rateLimiter, requireAuth, (req, res) => {
     const userFavorites = favorites.filter((favorite) => favorite.userId === req.user?.sub);
     res.json(userFavorites);
   });
 
-  app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, (req, res) => {
+  app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, async (req, res): Promise<void> => {
     const favoriteIndex = favorites.findIndex(
       (favorite) => favorite.userId === req.user?.sub && favorite.restaurantId === req.params.restaurantId
     );
@@ -84,7 +161,24 @@ export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }
       return;
     }
 
-    favorites.splice(favoriteIndex, 1);
+    const favorite = favorites[favoriteIndex];
+
+    if (deleteFavorite) {
+      try {
+        await deleteFavorite(favorite);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
+    }
+
+    const currentFavoriteIndex = favorites.findIndex((candidate) => candidate === favorite);
+    if (currentFavoriteIndex === -1) {
+      res.status(404).json({ message: 'Favorite not found' });
+      return;
+    }
+
+    favorites.splice(currentFavoriteIndex, 1);
     res.status(204).send();
   });
 

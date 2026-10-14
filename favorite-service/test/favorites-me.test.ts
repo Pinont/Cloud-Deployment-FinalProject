@@ -3,9 +3,140 @@ import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
-import { createApp } from '../src/app';
+import { createApp, type Favorite } from '../src/app';
 
 const TEST_JWT_SECRET = 'test-secret';
+
+test('FV-01: POST /favorites saves an existing restaurant with the default list name', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async (restaurantId) => restaurantId === 'rest-1'
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const response = await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: ' rest-1 ' })
+    .expect(201);
+
+  assert.deepEqual(response.body, {
+    userId: 'user-1',
+    restaurantId: 'rest-1',
+    listName: 'ร้านโปรด'
+  });
+  assert.deepEqual(favorites, [response.body]);
+});
+
+test('FV-02: POST /favorites rejects a duplicate restaurant for the same user', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => true
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'rest-1' })
+    .expect(201);
+
+  const response = await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'rest-1' })
+    .expect(409);
+
+  assert.deepEqual(response.body, { message: 'Restaurant is already in favorites' });
+  assert.equal(favorites.length, 1);
+});
+
+test('FV-02.1: POST /favorites rejects overlapping duplicate saves for the same user', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return true;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const [responseA, responseB] = await Promise.all([
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' }),
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' })
+  ]);
+  const statuses = [responseA.status, responseB.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [201, 409]);
+  assert.equal(favorites.length, 1);
+});
+
+test('FV-02.2: POST /favorites returns 409 when persistence rejects a duplicate', async () => {
+  const favorites: Favorite[] = [];
+  const duplicateError = Object.assign(new Error('duplicate key'), { code: 11000 });
+  let persistCalls = 0;
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => true,
+    persistFavorite: async () => {
+      persistCalls += 1;
+      if (persistCalls === 2) {
+        throw duplicateError;
+      }
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const [firstResponse, secondResponse] = await Promise.all([
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' }),
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' })
+  ]);
+  const statuses = [firstResponse.status, secondResponse.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [201, 409]);
+  assert.equal(favorites.length, 1);
+});
+
+test('FV-POST-404: POST /favorites returns 404 when the restaurant does not exist', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => false
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const response = await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'missing' })
+    .expect(404);
+
+  assert.deepEqual(response.body, { message: 'Restaurant not found' });
+  assert.deepEqual(favorites, []);
+});
 
 test('FV-03: GET /favorites/me returns only current user favorites', async () => {
   const app = createApp({
@@ -46,7 +177,7 @@ test('FV-03: GET /favorites/me without token returns 401', async () => {
   assert.deepEqual(response.body, { message: 'Unauthorized' });
 });
 
-test('DELETE /favorites/:restaurantId removes only the current user favorite', async () => {
+test('FV-DEL-01: DELETE /favorites/:restaurantId removes only the current user favorite', async () => {
   const favorites = [
     { userId: 'user-1', restaurantId: 'rest-1' },
     { userId: 'user-2', restaurantId: 'rest-1' },
@@ -69,7 +200,66 @@ test('DELETE /favorites/:restaurantId removes only the current user favorite', a
   ]);
 });
 
-test('DELETE /favorites/:restaurantId without token returns 401', async () => {
+test('FV-DEL-04: DELETE /favorites/:restaurantId does not remove the next favorite during overlap', async () => {
+  const favorites = [
+    { userId: 'user-1', restaurantId: 'rest-1' },
+    { userId: 'user-2', restaurantId: 'rest-2' }
+  ];
+  let deleteCalls = 0;
+  let releaseDelete: (() => void) | undefined;
+  const bothDeletesStarted = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    deleteFavorite: async () => {
+      deleteCalls += 1;
+      if (deleteCalls === 2) {
+        releaseDelete!();
+      }
+      await bothDeletesStarted;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const [responseA, responseB] = await Promise.all([
+    request(app).delete('/favorites/rest-1').auth(token, { type: 'bearer' }),
+    request(app).delete('/favorites/rest-1').auth(token, { type: 'bearer' })
+  ]);
+  const statuses = [responseA.status, responseB.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [204, 404]);
+  assert.deepEqual(favorites, [{ userId: 'user-2', restaurantId: 'rest-2' }]);
+});
+
+test('FV-DEL-05: DELETE /favorites/:restaurantId returns 503 when persistence delete fails', async () => {
+  const favorites = [{ userId: 'user-1', restaurantId: 'rest-1' }];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    deleteFavorite: async () => {
+      throw new Error('db unavailable');
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const response = await request(app)
+    .delete('/favorites/rest-1')
+    .auth(token, { type: 'bearer' })
+    .expect(503);
+
+  assert.deepEqual(response.body, { message: 'Favorite service unavailable' });
+  assert.deepEqual(favorites, [{ userId: 'user-1', restaurantId: 'rest-1' }]);
+});
+
+test('FV-DEL-02: DELETE /favorites/:restaurantId without token returns 401', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     favorites: [{ userId: 'user-1', restaurantId: 'rest-1' }]
@@ -82,7 +272,7 @@ test('DELETE /favorites/:restaurantId without token returns 401', async () => {
   assert.deepEqual(response.body, { message: 'Unauthorized' });
 });
 
-test('DELETE /favorites/:restaurantId returns 404 when the current user has not saved it', async () => {
+test('FV-DEL-03: DELETE /favorites/:restaurantId returns 404 when the current user has not saved it', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     favorites: [{ userId: 'user-2', restaurantId: 'rest-1' }]

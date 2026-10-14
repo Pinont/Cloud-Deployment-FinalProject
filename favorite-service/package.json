@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "test": "tsx --test",
+    "test:integration": "node scripts/run-compose-integration.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -15,7 +16,8 @@
   "dependencies": {
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.24.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
