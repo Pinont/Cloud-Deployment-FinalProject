@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Restaurant = require('../models/restaurant');
 const { requireAuth } = require('../middleware/auth');
 
@@ -30,6 +31,23 @@ router.get('/', async (req, res, next) => {
     const order = sort === 'rating' ? { avgRating: -1, reviewCount: -1 } : { createdAt: -1 };
     const restaurants = await Restaurant.find(filter).sort(order);
     return res.json(restaurants);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// #7 — public detail; review/favorite use it to check that a restaurant exists.
+// A malformed id is reported as 404 too, so callers only need to handle "found" vs "not found".
+router.get('/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+    const restaurant = await Restaurant.findById(req.params.id);
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+    return res.json(restaurant);
   } catch (err) {
     return next(err);
   }
