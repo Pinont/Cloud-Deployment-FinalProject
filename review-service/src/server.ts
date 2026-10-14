@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { createApp } from './app';
-import { Review } from './model';
+import { Review } from './models/review';
 
 const port = process.env.PORT || 3003;
 const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/review-db';
