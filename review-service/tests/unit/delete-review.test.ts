@@ -260,7 +260,7 @@ test('RV-DEL-07: Concurrent delete requests for the same restaurant are serializ
   assert.strictEqual(lastUpdate.reviewCount, 0);
 });
 
-test('RV-DEL-08: If rating computation fails before deletion, review is NOT deleted and returns 500 so retry is possible', async () => {
+test('RV-DEL-08: Deletion succeeds with 200 even if rating computation fails, review is deleted from DB', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   const review = await Review.create({
@@ -280,14 +280,13 @@ test('RV-DEL-08: If rating computation fails before deletion, review is NOT dele
     const res = await request(app)
       .delete(`/reviews/${review._id}`)
       .set('Authorization', `Bearer ${createToken('author-fail-compute')}`)
-      .expect(500);
+      .expect(200);
 
-    assert.strictEqual(res.body.error, 'Internal server error');
+    assert.strictEqual(res.body.message, 'Review deleted successfully');
 
-    // Verify document was NOT deleted, allowing retry
+    // Verify document was indeed deleted from DB
     const doc = await Review.findById(review._id);
-    assert.ok(doc !== null);
-    assert.strictEqual(doc?.comment, 'Compute error test');
+    assert.strictEqual(doc, null);
   } finally {
     Review.aggregate = originalAggregate;
   }
@@ -319,5 +318,50 @@ test('RV-DEL-09: If findByIdAndDelete rejects with an error, the route returns 5
     Review.findByIdAndDelete = originalFindByIdAndDelete;
   }
 });
+
+test('RV-DEL-10: Create and delete operations for the same restaurant are serialized via queue', async () => {
+  const updates: Array<{ avgRating: number; reviewCount: number }> = [];
+  const mockUpdateRating = async (_id: string, avgRating: number, reviewCount: number) => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    updates.push({ avgRating, reviewCount });
+  };
+
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    updateRestaurantRating: mockUpdateRating,
+    checkRestaurantExists: async () => true
+  });
+
+  const existingReview = await Review.create({
+    userId: 'author-existing',
+    restaurantId: 'rest-coord',
+    rating: 2,
+    comment: 'Old review'
+  });
+
+  // Launch delete and post concurrently
+  const [delRes, postRes] = await Promise.all([
+    request(app)
+      .delete(`/reviews/${existingReview._id}`)
+      .set('Authorization', `Bearer ${createToken('author-existing')}`),
+    request(app)
+      .post('/reviews')
+      .set('Authorization', `Bearer ${createToken('author-new')}`)
+      .send({
+        restaurantId: 'rest-coord',
+        rating: 5,
+        comment: 'New review'
+      })
+  ]);
+
+  assert.strictEqual(delRes.status, 200);
+  assert.strictEqual(postRes.status, 201);
+
+  // Existing review deleted, new review created
+  const remainingReviews = await Review.find({ restaurantId: 'rest-coord' });
+  assert.strictEqual(remainingReviews.length, 1);
+  assert.strictEqual(remainingReviews[0].userId, 'author-new');
+});
+
 
 

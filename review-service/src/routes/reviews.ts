@@ -12,19 +12,10 @@ export interface CreateReviewRouterOptions {
 
 async function computeRestaurantRating(
   model: typeof DefaultReviewModel,
-  restaurantId: string,
-  excludeReviewId?: mongoose.Types.ObjectId | string
+  restaurantId: string
 ): Promise<{ avgRating: number; reviewCount: number }> {
-  const match: Record<string, unknown> = { restaurantId };
-  if (excludeReviewId) {
-    const objectId = mongoose.isValidObjectId(excludeReviewId)
-      ? new mongoose.Types.ObjectId(excludeReviewId)
-      : excludeReviewId;
-    match._id = { $ne: objectId };
-  }
-
   const summary = await model.aggregate([
-    { $match: match },
+    { $match: { restaurantId } },
     {
       $group: {
         _id: '$restaurantId',
@@ -42,6 +33,21 @@ async function computeRestaurantRating(
     avgRating: Math.round(summary[0].avgRating * 10) / 10,
     reviewCount: summary[0].reviewCount
   };
+}
+
+// ponytail: in-memory queue per restaurantId serializes review creation, deletion, and rating updates to prevent race conditions. Ceiling = single instance; upgrade = distributed lock (e.g. Redis Redlock) or versioned PATCH.
+const restaurantQueues = new Map<string, Promise<unknown>>();
+
+function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Promise<T> {
+  const prev = restaurantQueues.get(restaurantId) || Promise.resolve();
+  const current = prev.catch(() => {}).then(task);
+  const cleanup: Promise<unknown> = current.finally(() => {
+    if (restaurantQueues.get(restaurantId) === cleanup) {
+      restaurantQueues.delete(restaurantId);
+    }
+  });
+  restaurantQueues.set(restaurantId, cleanup);
+  return cleanup as Promise<T>;
 }
 
 export function createReviewRouter({
@@ -84,11 +90,13 @@ export function createReviewRouter({
     }
 
     try {
-      const review = await reviewModel.create({
-        userId: req.user!.sub,
-        restaurantId: normalizedRestaurantId,
-        rating,
-        comment: comment ? comment.trim() : ''
+      const review = await runPerRestaurant(normalizedRestaurantId, async () => {
+        return reviewModel.create({
+          userId: req.user!.sub,
+          restaurantId: normalizedRestaurantId,
+          rating,
+          comment: comment ? comment.trim() : ''
+        });
       });
 
       res.status(201).json(review);
@@ -213,21 +221,6 @@ export function createReviewRouter({
     }
   });
 
-// ponytail: in-memory queue per restaurantId serializes delete-and-update flow to prevent out-of-order race conditions on rating updates. Ceiling = single instance; upgrade = distributed lock (e.g. Redis Redlock) or versioned PATCH.
-const restaurantQueues = new Map<string, Promise<unknown>>();
-
-function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Promise<T> {
-  const prev = restaurantQueues.get(restaurantId) || Promise.resolve();
-  const current = prev.catch(() => {}).then(task);
-  const cleanup: Promise<unknown> = current.finally(() => {
-    if (restaurantQueues.get(restaurantId) === cleanup) {
-      restaurantQueues.delete(restaurantId);
-    }
-  });
-  restaurantQueues.set(restaurantId, cleanup);
-  return cleanup as Promise<T>;
-}
-
   router.delete('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
     const rawId = req.params.id;
     const reviewId = typeof rawId === 'string' ? rawId.trim() : '';
@@ -252,25 +245,32 @@ function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Prom
       }
 
       await runPerRestaurant(review.restaurantId, async () => {
-        const { avgRating, reviewCount } = await computeRestaurantRating(
-          reviewModel,
-          review.restaurantId,
-          review._id
-        );
-
         await reviewModel.findByIdAndDelete(reviewId);
 
-        if (updateRestaurantRating) {
-          try {
-            await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
-          } catch (err: any) {
-            // Failure of restaurant-service handled gracefully per spec
-            // eslint-disable-next-line no-console
-            console.warn(
-              `Failed to update rating for restaurant ${review.restaurantId}:`,
-              err?.message || err
-            );
+        try {
+          const { avgRating, reviewCount } = await computeRestaurantRating(
+            reviewModel,
+            review.restaurantId
+          );
+
+          if (updateRestaurantRating) {
+            try {
+              await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
+            } catch (err: any) {
+              // Failure of restaurant-service handled gracefully per spec
+              // eslint-disable-next-line no-console
+              console.warn(
+                `Failed to update rating for restaurant ${review.restaurantId}:`,
+                err?.message || err
+              );
+            }
           }
+        } catch (err: any) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `Failed to compute rating for restaurant ${review.restaurantId}:`,
+            err?.message || err
+          );
         }
       });
 
