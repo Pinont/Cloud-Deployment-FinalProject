@@ -76,4 +76,62 @@ router.post('/', requireAuth, async (req, res, next) => {
   }
 });
 
+// Loads req.params.id for #8; 404 if missing, 403 unless the token user is the owner.
+async function loadOwnRestaurant(req, res, next) {
+  try {
+    const restaurant = mongoose.isValidObjectId(req.params.id)
+      ? await Restaurant.findById(req.params.id)
+      : null;
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+    if (restaurant.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'Only the owner can change this restaurant' });
+    }
+    req.restaurant = restaurant;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+const EDITABLE_FIELDS = ['name', 'category', 'priceRange', 'address'];
+
+// #8 — owner updates name, category, priceRange or address (fields left out stay as they are).
+router.put('/:id', requireAuth, loadOwnRestaurant, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const updates = Object.fromEntries(
+      EDITABLE_FIELDS.filter((field) => body[field] !== undefined).map((field) => [field, body[field]]),
+    );
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: `Provide at least one of: ${EDITABLE_FIELDS.join(', ')}` });
+    }
+    if ('name' in updates && (typeof updates.name !== 'string' || !updates.name.trim())) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (
+      'priceRange' in updates &&
+      (!Number.isInteger(updates.priceRange) || updates.priceRange < 1 || updates.priceRange > 4)
+    ) {
+      return res.status(400).json({ error: 'priceRange must be 1-4' });
+    }
+    req.restaurant.set(updates);
+    await req.restaurant.save();
+    return res.json(req.restaurant);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// #8 — owner deletes the restaurant; returns the deleted document.
+router.delete('/:id', requireAuth, loadOwnRestaurant, async (req, res, next) => {
+  try {
+    await req.restaurant.deleteOne();
+    return res.json(req.restaurant);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 module.exports = router;
