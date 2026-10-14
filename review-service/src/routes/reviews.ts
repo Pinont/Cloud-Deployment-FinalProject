@@ -35,6 +35,33 @@ async function computeRestaurantRating(
   };
 }
 
+async function syncRestaurantRating(
+  model: typeof DefaultReviewModel,
+  restaurantId: string,
+  updateFn?: UpdateRestaurantRatingFn
+): Promise<void> {
+  if (!updateFn) return;
+  try {
+    const { avgRating, reviewCount } = await computeRestaurantRating(model, restaurantId);
+    try {
+      await updateFn(restaurantId, avgRating, reviewCount);
+    } catch (err: any) {
+      // Failure of restaurant-service handled gracefully per spec
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Failed to update rating for restaurant ${restaurantId}:`,
+        err?.message || err
+      );
+    }
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Failed to compute rating for restaurant ${restaurantId}:`,
+      err?.message || err
+    );
+  }
+}
+
 // ponytail: in-memory queue per restaurantId serializes review creation, deletion, and rating updates to prevent race conditions. Ceiling = single instance; upgrade = distributed lock (e.g. Redis Redlock) or versioned PATCH.
 const restaurantQueues = new Map<string, Promise<unknown>>();
 
@@ -91,12 +118,15 @@ export function createReviewRouter({
 
     try {
       const review = await runPerRestaurant(normalizedRestaurantId, async () => {
-        return reviewModel.create({
+        const doc = await reviewModel.create({
           userId: req.user!.sub,
           restaurantId: normalizedRestaurantId,
           rating,
           comment: comment ? comment.trim() : ''
         });
+
+        await syncRestaurantRating(reviewModel, normalizedRestaurantId, updateRestaurantRating);
+        return doc;
       });
 
       res.status(201).json(review);
@@ -246,32 +276,7 @@ export function createReviewRouter({
 
       await runPerRestaurant(review.restaurantId, async () => {
         await reviewModel.findByIdAndDelete(reviewId);
-
-        try {
-          const { avgRating, reviewCount } = await computeRestaurantRating(
-            reviewModel,
-            review.restaurantId
-          );
-
-          if (updateRestaurantRating) {
-            try {
-              await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
-            } catch (err: any) {
-              // Failure of restaurant-service handled gracefully per spec
-              // eslint-disable-next-line no-console
-              console.warn(
-                `Failed to update rating for restaurant ${review.restaurantId}:`,
-                err?.message || err
-              );
-            }
-          }
-        } catch (err: any) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `Failed to compute rating for restaurant ${review.restaurantId}:`,
-            err?.message || err
-          );
-        }
+        await syncRestaurantRating(reviewModel, review.restaurantId, updateRestaurantRating);
       });
 
       res.status(200).json({ message: 'Review deleted successfully' });
