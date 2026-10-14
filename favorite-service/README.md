@@ -39,3 +39,22 @@ per list. Filter the current user's favorites with
 Use the same `listName` query parameter with
 `DELETE /favorites/:restaurantId?listName=<name>` to remove a favorite from a
 specific list. If omitted, the default list is used.
+
+## Sharing a favorite list
+
+An authenticated owner can create a read-only share link for a list:
+
+```http
+POST /favorites/share
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"listName":"คาเฟ่อยากไป"}
+```
+
+The response contains an opaque `token` and a relative `url`. Anyone with the
+token can read the current contents with `GET /favorites/shared/:token`; the
+response contains the list name and restaurant IDs, but not the owner's user ID.
+The owner can revoke sharing with
+`DELETE /favorites/share?listName=<name>`. If `listName` is omitted, the
+default list is used.
