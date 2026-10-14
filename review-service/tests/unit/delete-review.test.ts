@@ -320,7 +320,7 @@ test('RV-DEL-09: If findByIdAndDelete rejects with an error, the route returns 5
 });
 
 test('RV-DEL-10: Review creation waits for in-flight deletion and rating update on the same restaurant', async () => {
-  let releaseDelete: () => void;
+  let releaseDelete: () => void = () => {};
   const deleteHoldPromise = new Promise<void>((resolve) => {
     releaseDelete = resolve;
   });
@@ -336,10 +336,16 @@ test('RV-DEL-10: Review creation waits for in-flight deletion and rating update 
     }
   };
 
+  let postReachedRestaurantCheck = false;
+  const mockCheckRestaurantExists = async () => {
+    postReachedRestaurantCheck = true;
+    return true;
+  };
+
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     updateRestaurantRating: mockUpdateRating,
-    checkRestaurantExists: async () => true
+    checkRestaurantExists: mockCheckRestaurantExists
   });
 
   const existingReview = await Review.create({
@@ -349,50 +355,67 @@ test('RV-DEL-10: Review creation waits for in-flight deletion and rating update 
     comment: 'Old review'
   });
 
-  // 1. Launch DELETE which pauses inside updateRestaurantRating
-  const deletePromise = request(app)
-    .delete(`/reviews/${existingReview._id}`)
-    .set('Authorization', `Bearer ${createToken('author-existing')}`)
-    .then((res) => res);
+  try {
+    // 1. Launch DELETE which pauses inside updateRestaurantRating
+    const deletePromise = request(app)
+      .delete(`/reviews/${existingReview._id}`)
+      .set('Authorization', `Bearer ${createToken('author-existing')}`)
+      .then((res) => res);
 
-  // Wait until DELETE enters updateRestaurantRating and holds the queue
-  while (!deleteStartedRatingUpdate) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Bounded wait until DELETE enters updateRestaurantRating and holds the queue
+    let attempts = 0;
+    while (!deleteStartedRatingUpdate && attempts < 100) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      attempts++;
+    }
+    assert.strictEqual(deleteStartedRatingUpdate, true, 'DELETE should reach updateRestaurantRating');
+
+    // 2. Launch POST while DELETE holds the queue for 'rest-coord'
+    const postPromise = request(app)
+      .post('/reviews')
+      .set('Authorization', `Bearer ${createToken('author-new')}`)
+      .send({
+        restaurantId: 'rest-coord',
+        rating: 5,
+        comment: 'New review'
+      })
+      .then((res) => {
+        postCompleted = true;
+        return res;
+      });
+
+    // Wait until POST has passed the restaurant exists check and reached the route queue
+    attempts = 0;
+    while (!postReachedRestaurantCheck && attempts < 100) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      attempts++;
+    }
+    assert.strictEqual(postReachedRestaurantCheck, true, 'POST should reach the route');
+
+    // Small delay to allow POST to wait in queue
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Assert that review was NOT written to DB yet while queue is held by DELETE
+    const interimReview = await Review.findOne({ userId: 'author-new' });
+    assert.strictEqual(interimReview, null, 'Review should not be written to DB while queue is held');
+    assert.strictEqual(postCompleted, false);
+
+    // 3. Release the DELETE hold
+    releaseDelete();
+
+    // 4. Await both requests
+    const [delRes, postRes] = await Promise.all([deletePromise, postPromise]);
+
+    assert.strictEqual(delRes.status, 200);
+    assert.strictEqual(postRes.status, 201);
+    assert.strictEqual(postCompleted, true);
+
+    const remainingReviews = await Review.find({ restaurantId: 'rest-coord' });
+    assert.strictEqual(remainingReviews.length, 1);
+    assert.strictEqual(remainingReviews[0].userId, 'author-new');
+  } finally {
+    releaseDelete();
   }
-
-  // 2. Launch POST while DELETE holds the queue for 'rest-coord'
-  const postPromise = request(app)
-    .post('/reviews')
-    .set('Authorization', `Bearer ${createToken('author-new')}`)
-    .send({
-      restaurantId: 'rest-coord',
-      rating: 5,
-      comment: 'New review'
-    })
-    .then((res) => {
-      postCompleted = true;
-      return res;
-    });
-
-  // Small delay to allow POST to attempt execution
-  await new Promise((resolve) => setTimeout(resolve, 40));
-
-  // Assert that POST has NOT finished yet because the queue for 'rest-coord' is held
-  assert.strictEqual(postCompleted, false);
-
-  // 3. Release the DELETE hold
-  releaseDelete!();
-
-  // 4. Await both requests
-  const [delRes, postRes] = await Promise.all([deletePromise, postPromise]);
-
-  assert.strictEqual(delRes.status, 200);
-  assert.strictEqual(postRes.status, 201);
-  assert.strictEqual(postCompleted, true);
-
-  const remainingReviews = await Review.find({ restaurantId: 'rest-coord' });
-  assert.strictEqual(remainingReviews.length, 1);
-  assert.strictEqual(remainingReviews[0].userId, 'author-new');
 });
 
 
