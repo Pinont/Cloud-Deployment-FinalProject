@@ -147,7 +147,7 @@ test('FV-03: GET /favorites/me without token returns 401', async () => {
   assert.deepEqual(response.body, { message: 'Unauthorized' });
 });
 
-test('DELETE /favorites/:restaurantId removes only the current user favorite', async () => {
+test('FV-DEL-01: DELETE /favorites/:restaurantId removes only the current user favorite', async () => {
   const favorites = [
     { userId: 'user-1', restaurantId: 'rest-1' },
     { userId: 'user-2', restaurantId: 'rest-1' },
@@ -170,7 +170,43 @@ test('DELETE /favorites/:restaurantId removes only the current user favorite', a
   ]);
 });
 
-test('DELETE /favorites/:restaurantId returns 503 when persistence delete fails', async () => {
+test('FV-DEL-04: DELETE /favorites/:restaurantId does not remove the next favorite during overlap', async () => {
+  const favorites = [
+    { userId: 'user-1', restaurantId: 'rest-1' },
+    { userId: 'user-2', restaurantId: 'rest-2' }
+  ];
+  let deleteCalls = 0;
+  let releaseDelete: (() => void) | undefined;
+  const bothDeletesStarted = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    deleteFavorite: async () => {
+      deleteCalls += 1;
+      if (deleteCalls === 2) {
+        releaseDelete!();
+      }
+      await bothDeletesStarted;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const [responseA, responseB] = await Promise.all([
+    request(app).delete('/favorites/rest-1').auth(token, { type: 'bearer' }),
+    request(app).delete('/favorites/rest-1').auth(token, { type: 'bearer' })
+  ]);
+  const statuses = [responseA.status, responseB.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [204, 404]);
+  assert.deepEqual(favorites, [{ userId: 'user-2', restaurantId: 'rest-2' }]);
+});
+
+test('FV-DEL-05: DELETE /favorites/:restaurantId returns 503 when persistence delete fails', async () => {
   const favorites = [{ userId: 'user-1', restaurantId: 'rest-1' }];
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
@@ -193,7 +229,7 @@ test('DELETE /favorites/:restaurantId returns 503 when persistence delete fails'
   assert.deepEqual(favorites, [{ userId: 'user-1', restaurantId: 'rest-1' }]);
 });
 
-test('DELETE /favorites/:restaurantId without token returns 401', async () => {
+test('FV-DEL-02: DELETE /favorites/:restaurantId without token returns 401', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     favorites: [{ userId: 'user-1', restaurantId: 'rest-1' }]
@@ -206,7 +242,7 @@ test('DELETE /favorites/:restaurantId without token returns 401', async () => {
   assert.deepEqual(response.body, { message: 'Unauthorized' });
 });
 
-test('DELETE /favorites/:restaurantId returns 404 when the current user has not saved it', async () => {
+test('FV-DEL-03: DELETE /favorites/:restaurantId returns 404 when the current user has not saved it', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     favorites: [{ userId: 'user-2', restaurantId: 'rest-1' }]
