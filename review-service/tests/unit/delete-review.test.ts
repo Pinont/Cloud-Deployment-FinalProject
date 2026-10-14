@@ -260,7 +260,7 @@ test('RV-DEL-07: Concurrent delete requests for the same restaurant are serializ
   assert.strictEqual(lastUpdate.reviewCount, 0);
 });
 
-test('RV-DEL-08: Deletion succeeds with 200 even if rating computation fails, review is deleted from DB', async () => {
+test('RV-DEL-08: If rating computation fails before deletion, review is NOT deleted and returns 500 so retry is possible', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   const review = await Review.create({
@@ -273,20 +273,21 @@ test('RV-DEL-08: Deletion succeeds with 200 even if rating computation fails, re
   // Mock aggregate to throw an error
   const originalAggregate = Review.aggregate;
   Review.aggregate = (() => {
-    throw new Error('Mongo aggregation pipeline error');
+    return Promise.reject(new Error('Mongo aggregation pipeline error'));
   }) as any;
 
   try {
     const res = await request(app)
       .delete(`/reviews/${review._id}`)
       .set('Authorization', `Bearer ${createToken('author-fail-compute')}`)
-      .expect(200);
+      .expect(500);
 
-    assert.strictEqual(res.body.message, 'Review deleted successfully');
+    assert.strictEqual(res.body.error, 'Internal server error');
 
-    // Verify document was indeed deleted from DB
+    // Verify document was NOT deleted, allowing retry
     const doc = await Review.findById(review._id);
-    assert.strictEqual(doc, null);
+    assert.ok(doc !== null);
+    assert.strictEqual(doc?.comment, 'Compute error test');
   } finally {
     Review.aggregate = originalAggregate;
   }

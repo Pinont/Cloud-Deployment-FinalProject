@@ -12,10 +12,19 @@ export interface CreateReviewRouterOptions {
 
 async function computeRestaurantRating(
   model: typeof DefaultReviewModel,
-  restaurantId: string
+  restaurantId: string,
+  excludeReviewId?: mongoose.Types.ObjectId | string
 ): Promise<{ avgRating: number; reviewCount: number }> {
+  const match: Record<string, unknown> = { restaurantId };
+  if (excludeReviewId) {
+    const objectId = mongoose.isValidObjectId(excludeReviewId)
+      ? new mongoose.Types.ObjectId(excludeReviewId)
+      : excludeReviewId;
+    match._id = { $ne: objectId };
+  }
+
   const summary = await model.aggregate([
-    { $match: { restaurantId } },
+    { $match: match },
     {
       $group: {
         _id: '$restaurantId',
@@ -243,32 +252,25 @@ function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Prom
       }
 
       await runPerRestaurant(review.restaurantId, async () => {
+        const { avgRating, reviewCount } = await computeRestaurantRating(
+          reviewModel,
+          review.restaurantId,
+          review._id
+        );
+
         await reviewModel.findByIdAndDelete(reviewId);
 
-        try {
-          const { avgRating, reviewCount } = await computeRestaurantRating(
-            reviewModel,
-            review.restaurantId
-          );
-
-          if (updateRestaurantRating) {
-            try {
-              await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
-            } catch (err: any) {
-              // Failure of restaurant-service handled gracefully per spec
-              // eslint-disable-next-line no-console
-              console.warn(
-                `Failed to update rating for restaurant ${review.restaurantId}:`,
-                err?.message || err
-              );
-            }
+        if (updateRestaurantRating) {
+          try {
+            await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
+          } catch (err: any) {
+            // Failure of restaurant-service handled gracefully per spec
+            // eslint-disable-next-line no-console
+            console.warn(
+              `Failed to update rating for restaurant ${review.restaurantId}:`,
+              err?.message || err
+            );
           }
-        } catch (err: any) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `Failed to compute rating for restaurant ${review.restaurantId}:`,
-            err?.message || err
-          );
         }
       });
 
