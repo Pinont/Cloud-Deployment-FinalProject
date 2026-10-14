@@ -7,7 +7,7 @@
     "build": "tsc",
     "lint": "eslint .",
     "start": "node dist/src/server.js",
-    "test": "c8 --check-coverage --lines 70 --include \"src/**/*.ts\" --exclude \"src/server.ts\" --reporter=text --reporter=text-summary tsx --test",
+    "test": "c8 --all --check-coverage --lines 70 --include \"src/**/*.ts\" --exclude \"src/server.ts\" --reporter=text --reporter=text-summary tsx --test",
     "test:integration": "node scripts/run-compose-integration.mjs",
     "typecheck": "tsc --noEmit"
   },
