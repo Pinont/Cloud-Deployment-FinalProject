@@ -17,6 +17,8 @@ const FavoriteSchema = new Schema<Favorite>(
 );
 FavoriteSchema.index({ userId: 1, restaurantId: 1 }, { unique: true });
 const FavoriteModel = mongoose.models.Favorite || mongoose.model<Favorite>('Favorite', FavoriteSchema);
+const favoriteDocumentIds = new WeakMap<Favorite, mongoose.Types.ObjectId>();
+type PersistedFavorite = Favorite & { _id: mongoose.Types.ObjectId };
 
 async function start() {
   const mongoUri = process.env.MONGO_URI;
@@ -24,18 +26,25 @@ async function start() {
 
   if (mongoUri) {
     await mongoose.connect(mongoUri);
-    const persistedFavorites = await FavoriteModel.find({}, { _id: 0 }).lean<Favorite[]>();
+    const persistedFavorites = await FavoriteModel.find({}).lean<PersistedFavorite[]>();
     if (persistedFavorites.length > 0) {
-      favorites.splice(0, favorites.length, ...persistedFavorites);
+      const loadedFavorites = persistedFavorites.map(({ _id, ...favorite }) => {
+        favoriteDocumentIds.set(favorite, _id);
+        return favorite;
+      });
+      favorites.splice(0, favorites.length, ...loadedFavorites);
     }
     appOptions.persistFavorite = async (favorite) => {
-      await FavoriteModel.create(favorite);
+      const createdFavorite = await FavoriteModel.create(favorite);
+      favoriteDocumentIds.set(favorite, createdFavorite._id);
     };
     appOptions.deleteFavorite = async (favorite) => {
-      await FavoriteModel.deleteOne({
-        userId: favorite.userId,
-        restaurantId: favorite.restaurantId
-      });
+      const documentId = favoriteDocumentIds.get(favorite);
+      if (!documentId) {
+        return;
+      }
+      await FavoriteModel.deleteOne({ _id: documentId });
+      favoriteDocumentIds.delete(favorite);
     };
   }
 
