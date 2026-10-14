@@ -3,8 +3,8 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
-import { createApp } from '../src/app';
-import { Review } from '../src/model';
+import { createApp } from '../../src/app';
+import { Review } from '../../src/models/review';
 
 const TEST_JWT_SECRET = 'test-jwt-secret';
 
