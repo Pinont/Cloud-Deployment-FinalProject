@@ -169,8 +169,18 @@ export function createApp({
   });
 
   app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { listName } = req.query;
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedListName = typeof listName === 'string' ? listName.trim() : DEFAULT_LIST_NAME;
     const favoriteIndex = favorites.findIndex(
-      (favorite) => favorite.userId === req.user?.sub && favorite.restaurantId === req.params.restaurantId
+      (favorite) =>
+        favorite.userId === req.user?.sub &&
+        favorite.restaurantId === req.params.restaurantId &&
+        getListName(favorite) === normalizedListName
     );
 
     if (favoriteIndex === -1) {

@@ -253,6 +253,28 @@ test('FV-DEL-01: DELETE /favorites/:restaurantId removes only the current user f
   ]);
 });
 
+test('FV-DEL-06: DELETE /favorites/:restaurantId removes only the selected list', async () => {
+  const favorites = [
+    { userId: 'user-1', restaurantId: 'rest-1', listName: 'คาเฟ่อยากไป' },
+    { userId: 'user-1', restaurantId: 'rest-1', listName: 'ร้านที่เคยไป' }
+  ];
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET, favorites });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  await request(app)
+    .delete('/favorites/rest-1')
+    .query({ listName: 'ร้านที่เคยไป' })
+    .auth(token, { type: 'bearer' })
+    .expect(204);
+
+  assert.deepEqual(favorites, [
+    { userId: 'user-1', restaurantId: 'rest-1', listName: 'คาเฟ่อยากไป' }
+  ]);
+});
+
 test('FV-DEL-04: DELETE /favorites/:restaurantId does not remove the next favorite during overlap', async () => {
   const favorites = [
     { userId: 'user-1', restaurantId: 'rest-1' },

@@ -36,3 +36,6 @@ Pass a non-empty `listName` to `POST /favorites` to save a restaurant in a
 named list. The same restaurant can be saved in multiple lists, but only once
 per list. Filter the current user's favorites with
 `GET /favorites/me?listName=<name>`.
+Use the same `listName` query parameter with
+`DELETE /favorites/:restaurantId?listName=<name>` to remove a favorite from a
+specific list. If omitted, the default list is used.
