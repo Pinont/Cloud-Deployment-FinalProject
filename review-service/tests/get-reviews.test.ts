@@ -26,7 +26,7 @@ beforeEach(async () => {
   await Review.deleteMany({});
 });
 
-test('RV-02: Reviews with ratings 4, 5 and 3 for one restaurant give avgRating 4 and reviewCount 3', async () => {
+test('GET /reviews/restaurant/:id/rating returns avgRating 4 and reviewCount 3 for ratings 4, 5 and 3', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   await Review.create([
