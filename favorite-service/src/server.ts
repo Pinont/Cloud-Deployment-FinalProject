@@ -1,4 +1,4 @@
-import { createApp, type CreateAppOptions, type Favorite } from './app';
+import { createApp, DEFAULT_LIST_NAME, type CreateAppOptions, type Favorite } from './app';
 import mongoose, { Schema } from 'mongoose';
 
 const favorites: Favorite[] = [
@@ -11,11 +11,11 @@ const FavoriteSchema = new Schema<Favorite>(
   {
     userId: { type: String, required: true, trim: true },
     restaurantId: { type: String, required: true, trim: true },
-    listName: { type: String, trim: true }
+    listName: { type: String, trim: true, default: DEFAULT_LIST_NAME }
   },
   { versionKey: false }
 );
-FavoriteSchema.index({ userId: 1, restaurantId: 1 }, { unique: true });
+FavoriteSchema.index({ userId: 1, restaurantId: 1, listName: 1 }, { unique: true });
 const FavoriteModel = mongoose.models.Favorite || mongoose.model<Favorite>('Favorite', FavoriteSchema);
 const favoriteDocumentIds = new WeakMap<Favorite, mongoose.Types.ObjectId>();
 type PersistedFavorite = Favorite & { _id: mongoose.Types.ObjectId };
@@ -26,6 +26,7 @@ async function start() {
 
   if (mongoUri) {
     await mongoose.connect(mongoUri);
+    await FavoriteModel.syncIndexes();
     const persistedFavorites = await FavoriteModel.find({}).lean<PersistedFavorite[]>();
     if (persistedFavorites.length > 0) {
       const loadedFavorites = persistedFavorites.map(({ _id, ...favorite }) => {

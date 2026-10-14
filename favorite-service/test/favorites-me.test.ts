@@ -61,6 +61,59 @@ test('FV-02: POST /favorites rejects a duplicate restaurant for the same user', 
   assert.equal(favorites.length, 1);
 });
 
+test('FV-02.3: POST /favorites allows the same restaurant in different lists', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => true
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'rest-1', listName: 'คาเฟ่อยากไป' })
+    .expect(201);
+
+  const response = await request(app)
+    .post('/favorites')
+    .auth(token, { type: 'bearer' })
+    .send({ restaurantId: 'rest-1', listName: 'ร้านที่เคยไป' })
+    .expect(201);
+
+  assert.equal(response.body.listName, 'ร้านที่เคยไป');
+  assert.equal(favorites.length, 2);
+});
+
+test('FV-03.1: GET /favorites/me filters by list name', async () => {
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites: [
+      { userId: 'user-1', restaurantId: 'rest-1', listName: 'คาเฟ่อยากไป' },
+      { userId: 'user-1', restaurantId: 'rest-2', listName: 'ร้านที่เคยไป' },
+      { userId: 'user-2', restaurantId: 'rest-3', listName: 'คาเฟ่อยากไป' }
+    ]
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const response = await request(app)
+    .get('/favorites/me')
+    .query({ listName: 'คาเฟ่อยากไป' })
+    .auth(token, { type: 'bearer' })
+    .expect(200);
+
+  assert.deepEqual(response.body, [
+    { userId: 'user-1', restaurantId: 'rest-1', listName: 'คาเฟ่อยากไป' }
+  ]);
+});
+
 test('FV-02.1: POST /favorites rejects overlapping duplicate saves for the same user', async () => {
   const favorites: Favorite[] = [];
   const app = createApp({
