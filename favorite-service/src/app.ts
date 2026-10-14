@@ -16,6 +16,10 @@ interface AuthenticatedPayload extends JwtPayload {
   sub: string;
 }
 
+function isDuplicateKeyError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -128,7 +132,11 @@ export function createApp({
     if (persistFavorite) {
       try {
         await persistFavorite(favorite);
-      } catch {
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          res.status(409).json({ message: 'Restaurant is already in favorites' });
+          return;
+        }
         res.status(503).json({ message: 'Favorite service unavailable' });
         return;
       }
