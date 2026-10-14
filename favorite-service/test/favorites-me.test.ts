@@ -191,6 +191,90 @@ test('FV-SHARE-04: another user cannot revoke a shared list', async () => {
   assert.deepEqual(response.body, { message: 'Shared favorite list not found' });
 });
 
+test('FV-SHARE-05: overlapping share creation requests reuse the pending link', async () => {
+  const sharedLinks: ShareLink[] = [];
+  let persistCalls = 0;
+  let releasePersist: (() => void) | undefined;
+  const persistenceStarted = new Promise<void>((resolve) => {
+    releasePersist = resolve;
+  });
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    sharedLinks,
+    persistShareLink: async () => {
+      persistCalls += 1;
+      await persistenceStarted;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, { algorithm: 'HS256' });
+
+  const firstResponsePromise = request(app)
+    .post('/favorites/share')
+    .auth(token, { type: 'bearer' })
+    .send({ listName: 'คาเฟ่อยากไป' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const secondResponsePromise = request(app)
+    .post('/favorites/share')
+    .auth(token, { type: 'bearer' })
+    .send({ listName: 'คาเฟ่อยากไป' });
+  await new Promise((resolve) => setImmediate(resolve));
+  releasePersist!();
+
+  const [firstResponse, secondResponse] = await Promise.all([
+    firstResponsePromise,
+    secondResponsePromise
+  ]);
+  const statuses = [firstResponse.status, secondResponse.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [200, 201]);
+  assert.equal(firstResponse.body.token, secondResponse.body.token);
+  assert.equal(persistCalls, 1);
+  assert.equal(sharedLinks.length, 1);
+});
+
+test('FV-SHARE-06: overlapping revocations remove the captured links by identity', async () => {
+  const sharedLinks: ShareLink[] = [
+    { token: 'share-a', ownerId: 'user-1', listName: 'list-a' },
+    { token: 'share-b', ownerId: 'user-1', listName: 'list-b' }
+  ];
+  let revokeCalls = 0;
+  let releaseRevokes: (() => void) | undefined;
+  const bothRevokesStarted = new Promise<void>((resolve) => {
+    releaseRevokes = resolve;
+  });
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    sharedLinks,
+    revokeShareLink: async () => {
+      revokeCalls += 1;
+      if (revokeCalls === 2) {
+        releaseRevokes!();
+      }
+      await bothRevokesStarted;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, { algorithm: 'HS256' });
+
+  const [responseA, responseB] = await Promise.all([
+    request(app)
+      .delete('/favorites/share')
+      .query({ listName: 'list-a' })
+      .auth(token, { type: 'bearer' }),
+    request(app)
+      .delete('/favorites/share')
+      .query({ listName: 'list-b' })
+      .auth(token, { type: 'bearer' })
+  ]);
+
+  assert.deepEqual(
+    [responseA.status, responseB.status].sort((a, b) => a - b),
+    [204, 204]
+  );
+  assert.deepEqual(sharedLinks, []);
+  await request(app).get('/favorites/shared/share-a').expect(404);
+  await request(app).get('/favorites/shared/share-b').expect(404);
+});
+
 test('FV-02.1: POST /favorites rejects overlapping duplicate saves for the same user', async () => {
   const favorites: Favorite[] = [];
   const app = createApp({

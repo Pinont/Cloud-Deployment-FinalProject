@@ -101,6 +101,15 @@ export function createApp({
     message: { message: 'Too Many Requests' }
   });
   const requireAuth = authenticate(jwtSecret);
+  const pendingShareCreations = new Map<string, Promise<ShareLink>>();
+
+  const sendShareResponse = (res: Response, shareLink: ShareLink, status: number): void => {
+    res.status(status).json({
+      token: shareLink.token,
+      listName: shareLink.listName,
+      url: `/favorites/shared/${shareLink.token}`
+    });
+  };
 
   app.use(express.json());
 
@@ -189,16 +198,24 @@ export function createApp({
     }
 
     const normalizedListName = typeof listName === 'string' ? listName.trim() : DEFAULT_LIST_NAME;
+    const shareKey = `${req.user!.sub}\u0000${normalizedListName}`;
     const existingShare = sharedLinks.find(
       (shareLink) =>
         shareLink.ownerId === req.user?.sub && shareLink.listName === normalizedListName
     );
     if (existingShare) {
-      res.status(200).json({
-        token: existingShare.token,
-        listName: existingShare.listName,
-        url: `/favorites/shared/${existingShare.token}`
-      });
+      sendShareResponse(res, existingShare, 200);
+      return;
+    }
+
+    const pendingShare = pendingShareCreations.get(shareKey);
+    if (pendingShare) {
+      try {
+        const createdShare = await pendingShare;
+        sendShareResponse(res, createdShare, 200);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+      }
       return;
     }
 
@@ -208,21 +225,25 @@ export function createApp({
       listName: normalizedListName
     };
 
-    if (persistShareLink) {
-      try {
+    const shareCreation = (async (): Promise<ShareLink> => {
+      if (persistShareLink) {
         await persistShareLink(shareLink);
-      } catch {
-        res.status(503).json({ message: 'Favorite service unavailable' });
-        return;
+      }
+      sharedLinks.push(shareLink);
+      return shareLink;
+    })();
+    pendingShareCreations.set(shareKey, shareCreation);
+
+    try {
+      await shareCreation;
+      sendShareResponse(res, shareLink, 201);
+    } catch {
+      res.status(503).json({ message: 'Favorite service unavailable' });
+    } finally {
+      if (pendingShareCreations.get(shareKey) === shareCreation) {
+        pendingShareCreations.delete(shareKey);
       }
     }
-
-    sharedLinks.push(shareLink);
-    res.status(201).json({
-      token: shareLink.token,
-      listName: shareLink.listName,
-      url: `/favorites/shared/${shareLink.token}`
-    });
   });
 
   app.get('/favorites/shared/:token', rateLimiter, (req, res) => {
@@ -273,7 +294,13 @@ export function createApp({
       }
     }
 
-    sharedLinks.splice(shareIndex, 1);
+    const currentShareIndex = sharedLinks.findIndex((candidate) => candidate === shareLink);
+    if (currentShareIndex === -1) {
+      res.status(404).json({ message: 'Shared favorite list not found' });
+      return;
+    }
+
+    sharedLinks.splice(currentShareIndex, 1);
     res.status(204).send();
   });
 
