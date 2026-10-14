@@ -1,4 +1,5 @@
 import { createApp, type Favorite } from './app';
+import mongoose, { Schema } from 'mongoose';
 
 const favorites: Favorite[] = [
   { userId: 'user-1', restaurantId: 'rest-1' },
@@ -6,10 +7,43 @@ const favorites: Favorite[] = [
   { userId: 'user-1', restaurantId: 'rest-3' }
 ];
 
-const app = createApp({ favorites });
-const port = process.env.PORT || 3004;
+const FavoriteSchema = new Schema<Favorite>(
+  {
+    userId: { type: String, required: true, trim: true },
+    restaurantId: { type: String, required: true, trim: true },
+    listName: { type: String, trim: true }
+  },
+  { versionKey: false }
+);
+FavoriteSchema.index({ userId: 1, restaurantId: 1 }, { unique: true });
+const FavoriteModel = mongoose.models.Favorite || mongoose.model<Favorite>('Favorite', FavoriteSchema);
 
-app.listen(port, () => {
+async function start() {
+  const mongoUri = process.env.MONGO_URI;
+  if (mongoUri) {
+    await mongoose.connect(mongoUri);
+    const persistedFavorites = await FavoriteModel.find({}, { _id: 0 }).lean<Favorite[]>();
+    if (persistedFavorites.length > 0) {
+      favorites.splice(0, favorites.length, ...persistedFavorites);
+    }
+  }
+
+  const app = createApp({
+    favorites,
+    persistFavorite: async (favorite) => {
+      await FavoriteModel.create(favorite);
+    }
+  });
+  const port = process.env.PORT || 3004;
+
+  app.listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`favorite-service listening on port ${port}`);
+  });
+}
+
+start().catch((error) => {
   // eslint-disable-next-line no-console
-  console.log(`favorite-service listening on port ${port}`);
+  console.error('favorite-service failed to start', error);
+  process.exit(1);
 });

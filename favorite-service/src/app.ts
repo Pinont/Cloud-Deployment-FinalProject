@@ -55,12 +55,14 @@ export interface CreateAppOptions {
   favorites?: Favorite[];
   jwtSecret?: string;
   checkRestaurantExists?: RestaurantExistsFn;
+  persistFavorite?: (favorite: Favorite) => Promise<void>;
 }
 
 export function createApp({
   favorites = [],
   jwtSecret = process.env.JWT_SECRET,
-  checkRestaurantExists = createRestaurantClient()
+  checkRestaurantExists = createRestaurantClient(),
+  persistFavorite
 }: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
@@ -120,6 +122,16 @@ export function createApp({
       restaurantId: normalizedRestaurantId,
       listName: normalizedListName
     };
+
+    if (persistFavorite) {
+      try {
+        await persistFavorite(favorite);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
+    }
+
     favorites.push(favorite);
     res.status(201).json(favorite);
   });
