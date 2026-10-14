@@ -61,6 +61,31 @@ test('FV-02: POST /favorites rejects a duplicate restaurant for the same user', 
   assert.equal(favorites.length, 1);
 });
 
+test('FV-02.1: POST /favorites rejects overlapping duplicate saves for the same user', async () => {
+  const favorites: Favorite[] = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    checkRestaurantExists: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return true;
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const [responseA, responseB] = await Promise.all([
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' }),
+    request(app).post('/favorites').auth(token, { type: 'bearer' }).send({ restaurantId: 'rest-1' })
+  ]);
+  const statuses = [responseA.status, responseB.status].sort((a, b) => a - b);
+
+  assert.deepEqual(statuses, [201, 409]);
+  assert.equal(favorites.length, 1);
+});
+
 test('IT-03: POST /favorites returns 404 when the restaurant does not exist', async () => {
   const favorites: Favorite[] = [];
   const app = createApp({

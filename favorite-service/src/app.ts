@@ -94,16 +94,6 @@ export function createApp({
     const normalizedRestaurantId = restaurantId.trim();
     const normalizedListName = listName === undefined ? 'ร้านโปรด' : listName.trim();
 
-    if (
-      favorites.some(
-        (favorite) =>
-          favorite.userId === req.user?.sub && favorite.restaurantId === normalizedRestaurantId
-      )
-    ) {
-      res.status(409).json({ message: 'Restaurant is already in favorites' });
-      return;
-    }
-
     try {
       const exists = await checkRestaurantExists(normalizedRestaurantId);
       if (!exists) {
@@ -112,6 +102,16 @@ export function createApp({
       }
     } catch {
       res.status(503).json({ message: 'Restaurant service unavailable' });
+      return;
+    }
+
+    if (
+      favorites.some(
+        (favorite) =>
+          favorite.userId === req.user?.sub && favorite.restaurantId === normalizedRestaurantId
+      )
+    ) {
+      res.status(409).json({ message: 'Restaurant is already in favorites' });
       return;
     }
 
