@@ -26,7 +26,7 @@ beforeEach(async () => {
   await Review.deleteMany({});
 });
 
-test('GET /reviews/restaurant/:id/rating returns avgRating 4 and reviewCount 3 for ratings 4, 5 and 3', async () => {
+test('RV-GET-01: GET /reviews/restaurant/:id/rating returns avgRating 4 and reviewCount 3 for ratings 4, 5 and 3', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   await Review.create([
@@ -45,7 +45,7 @@ test('GET /reviews/restaurant/:id/rating returns avgRating 4 and reviewCount 3 f
   });
 });
 
-test('GET /reviews/restaurant/:id/rating returns avgRating 0 and reviewCount 0 when no reviews exist', async () => {
+test('RV-GET-02: GET /reviews/restaurant/:id/rating returns avgRating 0 and reviewCount 0 when no reviews exist', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   const res = await request(app)
@@ -58,7 +58,7 @@ test('GET /reviews/restaurant/:id/rating returns avgRating 0 and reviewCount 0 w
   });
 });
 
-test('GET /reviews/restaurant/:id/rating rounds average to 1 decimal place', async () => {
+test('RV-GET-03: GET /reviews/restaurant/:id/rating rounds average to 1 decimal place', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   // 4 + 4 + 5 = 13 / 3 = 4.3333... -> 4.3
@@ -78,7 +78,7 @@ test('GET /reviews/restaurant/:id/rating rounds average to 1 decimal place', asy
   });
 });
 
-test('GET /reviews/restaurant/:id returns all reviews for restaurant sorted newest first without __v', async () => {
+test('RV-GET-04: GET /reviews/restaurant/:id returns all reviews for restaurant sorted newest first without __v', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   await Review.create({
@@ -119,7 +119,7 @@ test('GET /reviews/restaurant/:id returns all reviews for restaurant sorted newe
   assert.equal(res.body[1].__v, undefined);
 });
 
-test('GET /reviews/restaurant/:id returns empty array when restaurant has no reviews', async () => {
+test('RV-GET-05: GET /reviews/restaurant/:id returns empty array when restaurant has no reviews', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   const res = await request(app)
@@ -129,7 +129,7 @@ test('GET /reviews/restaurant/:id returns empty array when restaurant has no rev
   assert.deepEqual(res.body, []);
 });
 
-test('GET /reviews/restaurant/:id and :id/rating return 400 when id is only whitespace', async () => {
+test('RV-GET-06: GET /reviews/restaurant/:id and :id/rating return 400 when id is only whitespace', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   const resList = await request(app)
@@ -143,7 +143,7 @@ test('GET /reviews/restaurant/:id and :id/rating return 400 when id is only whit
   assert.deepEqual(resRating.body, { error: 'restaurantId is required' });
 });
 
-test('GET endpoints are public and work without authorization header', async () => {
+test('RV-GET-07: GET endpoints are public and work without authorization header', async () => {
   const app = createApp({ jwtSecret: TEST_JWT_SECRET });
 
   await request(app)
@@ -155,7 +155,7 @@ test('GET endpoints are public and work without authorization header', async () 
     .expect(200);
 });
 
-test('GET endpoints return 500 when database throws an error', async () => {
+test('RV-GET-08: GET endpoints return 500 when database throws an error', async () => {
   const mockReviewModel: any = {
     find: () => {
       throw new Error('DB connection failure');
