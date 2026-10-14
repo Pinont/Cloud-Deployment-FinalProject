@@ -102,6 +102,14 @@ describe('POST /restaurants', () => {
       .send('{bad json');
     expect(res.status).toBe(400);
   });
+
+  test('body over the size limit → 413', async () => {
+    const res = await request(app)
+      .post('/restaurants')
+      .set('Authorization', `Bearer ${tokenFor()}`)
+      .send({ ...valid, address: 'x'.repeat(200 * 1024) });
+    expect(res.status).toBe(413);
+  });
 });
 
 describe('GET /health', () => {
