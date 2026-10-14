@@ -59,4 +59,16 @@ describe('GET /restaurants/:id', () => {
     const res = await request(app).get('/restaurants/not-an-id');
     expect(res.status).toBe(404);
   });
+
+  test('database failure → 500, not 404 (callers must not read it as "does not exist")', async () => {
+    const spy = jest.spyOn(Restaurant, 'findById').mockRejectedValueOnce(new Error('db down'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(app).get(`/restaurants/${new mongoose.Types.ObjectId()}`);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    spy.mockRestore();
+    consoleSpy.mockRestore();
+  });
 });
