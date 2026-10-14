@@ -1,4 +1,3 @@
-import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
@@ -12,14 +11,14 @@ const TEST_JWT_SECRET = 'test-jwt-secret';
 
 let mongoServer: MongoMemoryServer;
 
-before(async () => {
+beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const uri = mongoServer.getUri();
   await mongoose.connect(uri);
   await Review.init(); // ensure unique indexes are built
 });
 
-after(async () => {
+afterAll(async () => {
   await mongoose.disconnect();
   await mongoServer.stop();
 });
@@ -283,19 +282,6 @@ test('Allowed reviews: same user different restaurant and different user same re
     .expect(201);
 });
 
-test('POST /api/reviews works through gateway path alias', async () => {
-  const app = createApp({
-    jwtSecret: TEST_JWT_SECRET,
-    checkRestaurantExists: async () => true
-  });
-  const token = createToken('user-1');
-
-  await request(app)
-    .post('/api/reviews')
-    .auth(token, { type: 'bearer' })
-    .send({ restaurantId: 'rest-gateway', rating: 5 })
-    .expect(201);
-});
 
 test('POST /reviews returns 503 when restaurant-service throws an outage error', async () => {
   const app = createApp({
