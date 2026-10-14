@@ -194,16 +194,21 @@ test('FV-SHARE-04: another user cannot revoke a shared list', async () => {
 test('FV-SHARE-05: overlapping share creation requests reuse the pending link', async () => {
   const sharedLinks: ShareLink[] = [];
   let persistCalls = 0;
-  let releasePersist: (() => void) | undefined;
+  let releasePersistence: (() => void) | undefined;
+  let markPersistenceStarted: (() => void) | undefined;
   const persistenceStarted = new Promise<void>((resolve) => {
-    releasePersist = resolve;
+    markPersistenceStarted = resolve;
+  });
+  const persistenceReleased = new Promise<void>((resolve) => {
+    releasePersistence = resolve;
   });
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     sharedLinks,
     persistShareLink: async () => {
       persistCalls += 1;
-      await persistenceStarted;
+      markPersistenceStarted!();
+      await persistenceReleased;
     }
   });
   const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, { algorithm: 'HS256' });
@@ -211,14 +216,16 @@ test('FV-SHARE-05: overlapping share creation requests reuse the pending link', 
   const firstResponsePromise = request(app)
     .post('/favorites/share')
     .auth(token, { type: 'bearer' })
-    .send({ listName: 'คาเฟ่อยากไป' });
-  await new Promise((resolve) => setImmediate(resolve));
+    .send({ listName: 'คาเฟ่อยากไป' })
+    .then((response) => response);
+  await persistenceStarted;
   const secondResponsePromise = request(app)
     .post('/favorites/share')
     .auth(token, { type: 'bearer' })
-    .send({ listName: 'คาเฟ่อยากไป' });
+    .send({ listName: 'คาเฟ่อยากไป' })
+    .then((response) => response);
   await new Promise((resolve) => setImmediate(resolve));
-  releasePersist!();
+  releasePersistence!();
 
   const [firstResponse, secondResponse] = await Promise.all([
     firstResponsePromise,
