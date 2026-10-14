@@ -79,8 +79,9 @@ test('RV-LIKE-02: POST /reviews/:id/like is idempotent when liked again by same 
   assert.strictEqual(res.body.liked, true);
   assert.strictEqual(res.body.likes, 1);
 
-  const updated = await Review.findById(review._id);
+  const updated = await Review.findById(review._id).select('+likedBy');
   assert.strictEqual(updated?.likes, 1);
+  assert.deepStrictEqual(updated?.likedBy, ['user-1']);
 });
 
 test('RV-LIKE-03: DELETE /reviews/:id/like unlikes a review and returns 200 with liked: false and likes: 0', async () => {
@@ -120,17 +121,42 @@ test('RV-LIKE-04: DELETE /reviews/:id/like is idempotent when unliked again or u
     comment: 'Great!'
   });
 
-  // Unlike when never liked
-  const res = await request(app)
+  // 1. Unlike when never liked
+  const res1 = await request(app)
     .delete(`/reviews/${review._id}/like`)
     .set('Authorization', `Bearer ${createToken('user-1')}`)
     .expect(200);
 
-  assert.strictEqual(res.body.liked, false);
-  assert.strictEqual(res.body.likes, 0);
+  assert.strictEqual(res1.body.liked, false);
+  assert.strictEqual(res1.body.likes, 0);
 
-  const updated = await Review.findById(review._id);
+  // 2. Like the review
+  await request(app)
+    .post(`/reviews/${review._id}/like`)
+    .set('Authorization', `Bearer ${createToken('user-1')}`)
+    .expect(200);
+
+  // 3. Unlike
+  const res2 = await request(app)
+    .delete(`/reviews/${review._id}/like`)
+    .set('Authorization', `Bearer ${createToken('user-1')}`)
+    .expect(200);
+
+  assert.strictEqual(res2.body.liked, false);
+  assert.strictEqual(res2.body.likes, 0);
+
+  // 4. Unlike retry (duplicate delete on already unliked review)
+  const res3 = await request(app)
+    .delete(`/reviews/${review._id}/like`)
+    .set('Authorization', `Bearer ${createToken('user-1')}`)
+    .expect(200);
+
+  assert.strictEqual(res3.body.liked, false);
+  assert.strictEqual(res3.body.likes, 0);
+
+  const updated = await Review.findById(review._id).select('+likedBy');
   assert.strictEqual(updated?.likes, 0);
+  assert.deepStrictEqual(updated?.likedBy, []);
 });
 
 test('RV-LIKE-05: Multiple users like and unlike the same review', async () => {
@@ -283,3 +309,69 @@ test('RV-LIKE-11: Backward compatibility: like legacy review created without lik
   const updated = await Review.findById(legacyDoc.insertedId);
   assert.strictEqual(updated?.likes, 1);
 });
+
+test('RV-LIKE-12: Concurrent duplicate POST /reviews/:id/like requests result in only 1 like increment and 1 likedBy entry', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+  const review = await Review.create({
+    userId: 'author-1',
+    restaurantId: 'rest-1',
+    rating: 5,
+    comment: 'Great!'
+  });
+
+  const [res1, res2] = await Promise.all([
+    request(app)
+      .post(`/reviews/${review._id}/like`)
+      .set('Authorization', `Bearer ${createToken('user-1')}`),
+    request(app)
+      .post(`/reviews/${review._id}/like`)
+      .set('Authorization', `Bearer ${createToken('user-1')}`)
+  ]);
+
+  assert.strictEqual(res1.status, 200);
+  assert.strictEqual(res2.status, 200);
+  assert.strictEqual(res1.body.liked, true);
+  assert.strictEqual(res2.body.liked, true);
+  assert.strictEqual(res1.body.likes, 1);
+  assert.strictEqual(res2.body.likes, 1);
+
+  const updated = await Review.findById(review._id).select('+likedBy');
+  assert.strictEqual(updated?.likes, 1);
+  assert.deepStrictEqual(updated?.likedBy, ['user-1']);
+});
+
+test('RV-LIKE-13: Concurrent duplicate DELETE /reviews/:id/like requests result in only 1 like decrement', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+  const review = await Review.create({
+    userId: 'author-1',
+    restaurantId: 'rest-1',
+    rating: 5,
+    comment: 'Great!'
+  });
+
+  await request(app)
+    .post(`/reviews/${review._id}/like`)
+    .set('Authorization', `Bearer ${createToken('user-1')}`)
+    .expect(200);
+
+  const [res1, res2] = await Promise.all([
+    request(app)
+      .delete(`/reviews/${review._id}/like`)
+      .set('Authorization', `Bearer ${createToken('user-1')}`),
+    request(app)
+      .delete(`/reviews/${review._id}/like`)
+      .set('Authorization', `Bearer ${createToken('user-1')}`)
+  ]);
+
+  assert.strictEqual(res1.status, 200);
+  assert.strictEqual(res2.status, 200);
+  assert.strictEqual(res1.body.liked, false);
+  assert.strictEqual(res2.body.liked, false);
+  assert.strictEqual(res1.body.likes, 0);
+  assert.strictEqual(res2.body.likes, 0);
+
+  const updated = await Review.findById(review._id).select('+likedBy');
+  assert.strictEqual(updated?.likes, 0);
+  assert.deepStrictEqual(updated?.likedBy, []);
+});
+
