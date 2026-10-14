@@ -77,6 +77,30 @@ describe('GET /restaurants', () => {
     expect(res.body[0].id).toBeDefined();
   });
 
+  test('no sort → newest first', async () => {
+    await Restaurant.deleteMany({});
+    await Restaurant.create([
+      { name: 'Old', priceRange: 1, ownerId: 'u1', createdAt: new Date('2026-01-01') },
+      { name: 'Newest', priceRange: 1, ownerId: 'u1', createdAt: new Date('2026-03-01') },
+      { name: 'Middle', priceRange: 1, ownerId: 'u1', createdAt: new Date('2026-02-01') },
+    ]);
+
+    const res = await request(app).get('/restaurants');
+    expect(res.body.map((r) => r.name)).toEqual(['Newest', 'Middle', 'Old']);
+  });
+
+  test('sort=rating breaks ties by reviewCount desc', async () => {
+    await Restaurant.deleteMany({});
+    await Restaurant.create([
+      { name: 'Few reviews', priceRange: 1, ownerId: 'u1', avgRating: 4, reviewCount: 2 },
+      { name: 'Many reviews', priceRange: 1, ownerId: 'u1', avgRating: 4, reviewCount: 20 },
+      { name: 'Top', priceRange: 1, ownerId: 'u1', avgRating: 4.5, reviewCount: 1 },
+    ]);
+
+    const res = await request(app).get('/restaurants?sort=rating');
+    expect(res.body.map((r) => r.name)).toEqual(['Top', 'Many reviews', 'Few reviews']);
+  });
+
   test('no match → 200 with an empty list', async () => {
     const res = await request(app).get('/restaurants?category=pizza');
 
