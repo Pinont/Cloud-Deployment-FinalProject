@@ -51,3 +51,32 @@ test('RV-APP-04: createApp throws error if JWT_SECRET is not provided', () => {
     process.env.JWT_SECRET = originalEnv;
   }
 });
+
+test('RV-APP-05: Payload larger than 100kb returns 413 Payload Too Large', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+  const largePayload = JSON.stringify({ comment: 'x'.repeat(105 * 1024) });
+
+  const res = await request(app)
+    .post('/reviews')
+    .set('Content-Type', 'application/json')
+    .send(largePayload)
+    .expect(413);
+
+  assert.strictEqual(res.status, 413);
+  assert.ok(res.body.error);
+});
+
+test('RV-APP-06: Unsupported content-encoding returns 415 Unsupported Media Type', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+
+  const res = await request(app)
+    .post('/reviews')
+    .set('Content-Type', 'application/json')
+    .set('Content-Encoding', 'invalid-encoding')
+    .send('{"comment": "test"}')
+    .expect(415);
+
+  assert.strictEqual(res.status, 415);
+  assert.ok(res.body.error);
+});
+

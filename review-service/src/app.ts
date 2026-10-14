@@ -54,8 +54,17 @@ export function createApp({
   // Global Error Handler
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    if (err.name === 'ValidationError' || err.name === 'CastError') {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     if (err.type === 'entity.parse.failed') {
       res.status(400).json({ error: 'Invalid JSON body' });
+      return;
+    }
+    const status = err.status || err.statusCode;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      res.status(status).json({ error: err.message || 'Client error' });
       return;
     }
     res.status(500).json({ error: 'Internal server error' });

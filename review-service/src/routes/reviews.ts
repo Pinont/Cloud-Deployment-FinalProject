@@ -204,6 +204,21 @@ export function createReviewRouter({
     }
   });
 
+// ponytail: in-memory queue per restaurantId serializes delete-and-update flow to prevent out-of-order race conditions on rating updates. Ceiling = single instance; upgrade = distributed lock (e.g. Redis Redlock) or versioned PATCH.
+const restaurantQueues = new Map<string, Promise<unknown>>();
+
+function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Promise<T> {
+  const prev = restaurantQueues.get(restaurantId) || Promise.resolve();
+  const current = prev.catch(() => {}).then(task);
+  const cleanup: Promise<unknown> = current.finally(() => {
+    if (restaurantQueues.get(restaurantId) === cleanup) {
+      restaurantQueues.delete(restaurantId);
+    }
+  });
+  restaurantQueues.set(restaurantId, cleanup);
+  return current;
+}
+
   router.delete('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
     const rawId = req.params.id;
     const reviewId = typeof rawId === 'string' ? rawId.trim() : '';
@@ -227,20 +242,35 @@ export function createReviewRouter({
         return;
       }
 
-      await reviewModel.findByIdAndDelete(reviewId);
+      await runPerRestaurant(review.restaurantId, async () => {
+        await reviewModel.findByIdAndDelete(reviewId);
 
-      const { avgRating, reviewCount } = await computeRestaurantRating(
-        reviewModel,
-        review.restaurantId
-      );
-
-      if (updateRestaurantRating) {
         try {
-          await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
-        } catch {
-          // Failure of restaurant-service handled gracefully per spec
+          const { avgRating, reviewCount } = await computeRestaurantRating(
+            reviewModel,
+            review.restaurantId
+          );
+
+          if (updateRestaurantRating) {
+            try {
+              await updateRestaurantRating(review.restaurantId, avgRating, reviewCount);
+            } catch (err: any) {
+              // Failure of restaurant-service handled gracefully per spec
+              // eslint-disable-next-line no-console
+              console.warn(
+                `Failed to update rating for restaurant ${review.restaurantId}:`,
+                err?.message || err
+              );
+            }
+          }
+        } catch (err: any) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `Failed to compute rating for restaurant ${review.restaurantId}:`,
+            err?.message || err
+          );
         }
-      }
+      });
 
       res.status(200).json({ message: 'Review deleted successfully' });
     } catch {

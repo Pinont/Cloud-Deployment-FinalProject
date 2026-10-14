@@ -208,3 +208,87 @@ test('RV-DEL-06: Review is deleted even if restaurant-service rating update fail
   const doc = await Review.findById(review._id);
   assert.strictEqual(doc, null);
 });
+
+test('RV-DEL-07: Concurrent delete requests for the same restaurant are serialized, final update is 0/0', async () => {
+  const updates: Array<{ avgRating: number; reviewCount: number }> = [];
+  const mockUpdateRating = async (_id: string, avgRating: number, reviewCount: number) => {
+    // Artificial delay to simulate network latency
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    updates.push({ avgRating, reviewCount });
+  };
+
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    updateRestaurantRating: mockUpdateRating
+  });
+
+  const review1 = await Review.create({
+    userId: 'author-concurrent-1',
+    restaurantId: 'rest-ordered',
+    rating: 4,
+    comment: 'First concurrent'
+  });
+
+  const review2 = await Review.create({
+    userId: 'author-concurrent-2',
+    restaurantId: 'rest-ordered',
+    rating: 5,
+    comment: 'Second concurrent'
+  });
+
+  // Launch both deletes concurrently
+  const [res1, res2] = await Promise.all([
+    request(app)
+      .delete(`/reviews/${review1._id}`)
+      .set('Authorization', `Bearer ${createToken('author-concurrent-1')}`),
+    request(app)
+      .delete(`/reviews/${review2._id}`)
+      .set('Authorization', `Bearer ${createToken('author-concurrent-2')}`)
+  ]);
+
+  assert.strictEqual(res1.status, 200);
+  assert.strictEqual(res2.status, 200);
+
+  // Both reviews deleted
+  const remainingCount = await Review.countDocuments({ restaurantId: 'rest-ordered' });
+  assert.strictEqual(remainingCount, 0);
+
+  // The last update received must be the final state (0, 0)
+  assert.strictEqual(updates.length, 2);
+  const lastUpdate = updates[updates.length - 1];
+  assert.strictEqual(lastUpdate.avgRating, 0);
+  assert.strictEqual(lastUpdate.reviewCount, 0);
+});
+
+test('RV-DEL-08: Deletion succeeds with 200 even if rating computation fails, review is deleted from DB', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+
+  const review = await Review.create({
+    userId: 'author-fail-compute',
+    restaurantId: 'rest-fail-compute',
+    rating: 5,
+    comment: 'Compute error test'
+  });
+
+  // Mock aggregate to throw an error
+  const originalAggregate = Review.aggregate;
+  Review.aggregate = (() => {
+    throw new Error('Mongo aggregation pipeline error');
+  }) as any;
+
+  try {
+    const res = await request(app)
+      .delete(`/reviews/${review._id}`)
+      .set('Authorization', `Bearer ${createToken('author-fail-compute')}`)
+      .expect(200);
+
+    assert.strictEqual(res.body.message, 'Review deleted successfully');
+
+    // Verify document was indeed deleted from DB
+    const doc = await Review.findById(review._id);
+    assert.strictEqual(doc, null);
+  } finally {
+    Review.aggregate = originalAggregate;
+  }
+});
+
