@@ -196,8 +196,12 @@ test('FV-SHARE-05: overlapping share creation requests reuse the pending link', 
   let persistCalls = 0;
   let releasePersistence: (() => void) | undefined;
   let markPersistenceStarted: (() => void) | undefined;
+  let markPendingShareReached: (() => void) | undefined;
   const persistenceStarted = new Promise<void>((resolve) => {
     markPersistenceStarted = resolve;
+  });
+  const pendingShareReached = new Promise<void>((resolve) => {
+    markPendingShareReached = resolve;
   });
   const persistenceReleased = new Promise<void>((resolve) => {
     releasePersistence = resolve;
@@ -209,7 +213,8 @@ test('FV-SHARE-05: overlapping share creation requests reuse the pending link', 
       persistCalls += 1;
       markPersistenceStarted!();
       await persistenceReleased;
-    }
+    },
+    onPendingShareCreation: () => markPendingShareReached!()
   });
   const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, { algorithm: 'HS256' });
 
@@ -218,13 +223,29 @@ test('FV-SHARE-05: overlapping share creation requests reuse the pending link', 
     .auth(token, { type: 'bearer' })
     .send({ listName: 'คาเฟ่อยากไป' })
     .then((response) => response);
-  await persistenceStarted;
+  await Promise.race([
+    persistenceStarted,
+    firstResponsePromise.then(() => {
+      throw new Error('First share request completed before persistence started');
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out waiting for persistence to start')), 1000)
+    )
+  ]);
   const secondResponsePromise = request(app)
     .post('/favorites/share')
     .auth(token, { type: 'bearer' })
     .send({ listName: 'คาเฟ่อยากไป' })
     .then((response) => response);
-  await new Promise((resolve) => setImmediate(resolve));
+  await Promise.race([
+    pendingShareReached,
+    firstResponsePromise.then(() => {
+      throw new Error('First share request completed before pending request reached the handler');
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out waiting for pending share branch')), 1000)
+    )
+  ]);
   releasePersistence!();
 
   const [firstResponse, secondResponse] = await Promise.all([

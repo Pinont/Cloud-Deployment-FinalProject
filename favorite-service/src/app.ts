@@ -76,6 +76,7 @@ export interface CreateAppOptions {
   deleteFavorite?: (favorite: Favorite) => Promise<void>;
   persistShareLink?: (shareLink: ShareLink) => Promise<void>;
   revokeShareLink?: (shareLink: ShareLink) => Promise<void>;
+  onPendingShareCreation?: () => void;
 }
 
 export function createApp({
@@ -86,7 +87,8 @@ export function createApp({
   persistFavorite,
   deleteFavorite,
   persistShareLink,
-  revokeShareLink
+  revokeShareLink,
+  onPendingShareCreation
 }: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
@@ -210,6 +212,7 @@ export function createApp({
 
     const pendingShare = pendingShareCreations.get(shareKey);
     if (pendingShare) {
+      onPendingShareCreation?.();
       try {
         const createdShare = await pendingShare;
         sendShareResponse(res, createdShare, 200);
