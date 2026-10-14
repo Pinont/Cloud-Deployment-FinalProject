@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { randomBytes } from 'node:crypto';
 import { createRestaurantClient, type RestaurantExistsFn } from './restaurantClient';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -11,6 +12,12 @@ export interface Favorite {
   userId: string;
   restaurantId: string;
   listName?: string;
+}
+
+export interface ShareLink {
+  token: string;
+  ownerId: string;
+  listName: string;
 }
 
 interface AuthenticatedPayload extends JwtPayload {
@@ -62,18 +69,24 @@ function authenticate(jwtSecret: string) {
 
 export interface CreateAppOptions {
   favorites?: Favorite[];
+  sharedLinks?: ShareLink[];
   jwtSecret?: string;
   checkRestaurantExists?: RestaurantExistsFn;
   persistFavorite?: (favorite: Favorite) => Promise<void>;
   deleteFavorite?: (favorite: Favorite) => Promise<void>;
+  persistShareLink?: (shareLink: ShareLink) => Promise<void>;
+  revokeShareLink?: (shareLink: ShareLink) => Promise<void>;
 }
 
 export function createApp({
   favorites = [],
+  sharedLinks = [],
   jwtSecret = process.env.JWT_SECRET,
   checkRestaurantExists = createRestaurantClient(),
   persistFavorite,
-  deleteFavorite
+  deleteFavorite,
+  persistShareLink,
+  revokeShareLink
 }: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
@@ -166,6 +179,102 @@ export function createApp({
         (normalizedListName === undefined || getListName(favorite) === normalizedListName)
     );
     res.json(userFavorites);
+  });
+
+  app.post('/favorites/share', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { listName } = req.body || {};
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedListName = typeof listName === 'string' ? listName.trim() : DEFAULT_LIST_NAME;
+    const existingShare = sharedLinks.find(
+      (shareLink) =>
+        shareLink.ownerId === req.user?.sub && shareLink.listName === normalizedListName
+    );
+    if (existingShare) {
+      res.status(200).json({
+        token: existingShare.token,
+        listName: existingShare.listName,
+        url: `/favorites/shared/${existingShare.token}`
+      });
+      return;
+    }
+
+    const shareLink: ShareLink = {
+      token: randomBytes(32).toString('hex'),
+      ownerId: req.user!.sub,
+      listName: normalizedListName
+    };
+
+    if (persistShareLink) {
+      try {
+        await persistShareLink(shareLink);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
+    }
+
+    sharedLinks.push(shareLink);
+    res.status(201).json({
+      token: shareLink.token,
+      listName: shareLink.listName,
+      url: `/favorites/shared/${shareLink.token}`
+    });
+  });
+
+  app.get('/favorites/shared/:token', rateLimiter, (req, res) => {
+    const shareLink = sharedLinks.find((candidate) => candidate.token === req.params.token);
+    if (!shareLink) {
+      res.status(404).json({ message: 'Shared favorite list not found' });
+      return;
+    }
+
+    const sharedFavorites = favorites
+      .filter(
+        (favorite) =>
+          favorite.userId === shareLink.ownerId &&
+          getListName(favorite) === shareLink.listName
+      )
+      .map((favorite) => ({
+        restaurantId: favorite.restaurantId,
+        listName: getListName(favorite)
+      }));
+
+    res.json({ listName: shareLink.listName, favorites: sharedFavorites });
+  });
+
+  app.delete('/favorites/share', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { listName } = req.query;
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedListName = typeof listName === 'string' ? listName.trim() : DEFAULT_LIST_NAME;
+    const shareIndex = sharedLinks.findIndex(
+      (shareLink) =>
+        shareLink.ownerId === req.user?.sub && shareLink.listName === normalizedListName
+    );
+    if (shareIndex === -1) {
+      res.status(404).json({ message: 'Shared favorite list not found' });
+      return;
+    }
+
+    const shareLink = sharedLinks[shareIndex];
+    if (revokeShareLink) {
+      try {
+        await revokeShareLink(shareLink);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
+    }
+
+    sharedLinks.splice(shareIndex, 1);
+    res.status(204).send();
   });
 
   app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, async (req, res): Promise<void> => {
