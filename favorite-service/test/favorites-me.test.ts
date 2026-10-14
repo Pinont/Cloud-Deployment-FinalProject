@@ -170,6 +170,29 @@ test('DELETE /favorites/:restaurantId removes only the current user favorite', a
   ]);
 });
 
+test('DELETE /favorites/:restaurantId returns 503 when persistence delete fails', async () => {
+  const favorites = [{ userId: 'user-1', restaurantId: 'rest-1' }];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    favorites,
+    deleteFavorite: async () => {
+      throw new Error('db unavailable');
+    }
+  });
+  const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'
+  });
+
+  const response = await request(app)
+    .delete('/favorites/rest-1')
+    .auth(token, { type: 'bearer' })
+    .expect(503);
+
+  assert.deepEqual(response.body, { message: 'Favorite service unavailable' });
+  assert.deepEqual(favorites, [{ userId: 'user-1', restaurantId: 'rest-1' }]);
+});
+
 test('DELETE /favorites/:restaurantId without token returns 401', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,

@@ -56,13 +56,15 @@ export interface CreateAppOptions {
   jwtSecret?: string;
   checkRestaurantExists?: RestaurantExistsFn;
   persistFavorite?: (favorite: Favorite) => Promise<void>;
+  deleteFavorite?: (favorite: Favorite) => Promise<void>;
 }
 
 export function createApp({
   favorites = [],
   jwtSecret = process.env.JWT_SECRET,
   checkRestaurantExists = createRestaurantClient(),
-  persistFavorite
+  persistFavorite,
+  deleteFavorite
 }: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
@@ -141,7 +143,7 @@ export function createApp({
     res.json(userFavorites);
   });
 
-  app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, (req, res) => {
+  app.delete('/favorites/:restaurantId', rateLimiter, requireAuth, async (req, res): Promise<void> => {
     const favoriteIndex = favorites.findIndex(
       (favorite) => favorite.userId === req.user?.sub && favorite.restaurantId === req.params.restaurantId
     );
@@ -149,6 +151,17 @@ export function createApp({
     if (favoriteIndex === -1) {
       res.status(404).json({ message: 'Favorite not found' });
       return;
+    }
+
+    const favorite = favorites[favoriteIndex];
+
+    if (deleteFavorite) {
+      try {
+        await deleteFavorite(favorite);
+      } catch {
+        res.status(503).json({ message: 'Favorite service unavailable' });
+        return;
+      }
     }
 
     favorites.splice(favoriteIndex, 1);

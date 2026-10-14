@@ -32,6 +32,12 @@ async function start() {
     favorites,
     persistFavorite: async (favorite) => {
       await FavoriteModel.create(favorite);
+    },
+    deleteFavorite: async (favorite) => {
+      await FavoriteModel.deleteOne({
+        userId: favorite.userId,
+        restaurantId: favorite.restaurantId
+      });
     }
   });
   const port = process.env.PORT || 3004;
