@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import request from 'supertest';
+import request, { type Response as SupertestResponse } from 'supertest';
 
 import { createApp, type Favorite, type ShareLink } from '../src/app';
 
@@ -223,34 +223,43 @@ test('FV-SHARE-05: overlapping share creation requests reuse the pending link', 
     .auth(token, { type: 'bearer' })
     .send({ listName: 'คาเฟ่อยากไป' })
     .then((response) => response);
-  await Promise.race([
-    persistenceStarted,
-    firstResponsePromise.then(() => {
-      throw new Error('First share request completed before persistence started');
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Timed out waiting for persistence to start')), 1000)
-    )
-  ]);
-  const secondResponsePromise = request(app)
-    .post('/favorites/share')
-    .auth(token, { type: 'bearer' })
-    .send({ listName: 'คาเฟ่อยากไป' })
-    .then((response) => response);
-  await Promise.race([
-    pendingShareReached,
-    firstResponsePromise.then(() => {
-      throw new Error('First share request completed before pending request reached the handler');
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Timed out waiting for pending share branch')), 1000)
-    )
-  ]);
-  releasePersistence!();
+  let secondResponsePromise: Promise<SupertestResponse> | undefined;
+  try {
+    await Promise.race([
+      persistenceStarted,
+      firstResponsePromise.then(() => {
+        throw new Error('First share request completed before persistence started');
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out waiting for persistence to start')), 1000)
+      )
+    ]);
+    secondResponsePromise = request(app)
+      .post('/favorites/share')
+      .auth(token, { type: 'bearer' })
+      .send({ listName: 'คาเฟ่อยากไป' })
+      .then((response) => response);
+    await Promise.race([
+      pendingShareReached,
+      firstResponsePromise.then(() => {
+        throw new Error('First share request completed before pending request reached the handler');
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out waiting for pending share branch')), 1000)
+      )
+    ]);
+  } finally {
+    releasePersistence?.();
+    await Promise.allSettled(
+      [firstResponsePromise, secondResponsePromise].filter(
+        (promise): promise is Promise<SupertestResponse> => promise !== undefined
+      )
+    );
+  }
 
   const [firstResponse, secondResponse] = await Promise.all([
     firstResponsePromise,
-    secondResponsePromise
+    secondResponsePromise!
   ]);
   const statuses = [firstResponse.status, secondResponse.status].sort((a, b) => a - b);
 
