@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { createRestaurantClient, type RestaurantExistsFn } from './restaurantClient';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
@@ -8,6 +9,7 @@ const RATE_LIMIT_MAX_REQUESTS = 60;
 export interface Favorite {
   userId: string;
   restaurantId: string;
+  listName?: string;
 }
 
 interface AuthenticatedPayload extends JwtPayload {
@@ -52,9 +54,14 @@ function authenticate(jwtSecret: string) {
 export interface CreateAppOptions {
   favorites?: Favorite[];
   jwtSecret?: string;
+  checkRestaurantExists?: RestaurantExistsFn;
 }
 
-export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }: CreateAppOptions = {}) {
+export function createApp({
+  favorites = [],
+  jwtSecret = process.env.JWT_SECRET,
+  checkRestaurantExists = createRestaurantClient()
+}: CreateAppOptions = {}) {
   if (typeof jwtSecret !== 'string' || jwtSecret.trim() === '') {
     throw new Error('JWT_SECRET must be set');
   }
@@ -68,6 +75,54 @@ export function createApp({ favorites = [], jwtSecret = process.env.JWT_SECRET }
     message: { message: 'Too Many Requests' }
   });
   const requireAuth = authenticate(jwtSecret);
+
+  app.use(express.json());
+
+  app.post('/favorites', rateLimiter, requireAuth, async (req, res): Promise<void> => {
+    const { restaurantId, listName } = req.body || {};
+
+    if (typeof restaurantId !== 'string' || restaurantId.trim() === '') {
+      res.status(400).json({ message: 'restaurantId is required' });
+      return;
+    }
+
+    if (listName !== undefined && (typeof listName !== 'string' || listName.trim() === '')) {
+      res.status(400).json({ message: 'listName must be a non-empty string' });
+      return;
+    }
+
+    const normalizedRestaurantId = restaurantId.trim();
+    const normalizedListName = listName === undefined ? 'ร้านโปรด' : listName.trim();
+
+    if (
+      favorites.some(
+        (favorite) =>
+          favorite.userId === req.user?.sub && favorite.restaurantId === normalizedRestaurantId
+      )
+    ) {
+      res.status(409).json({ message: 'Restaurant is already in favorites' });
+      return;
+    }
+
+    try {
+      const exists = await checkRestaurantExists(normalizedRestaurantId);
+      if (!exists) {
+        res.status(404).json({ message: 'Restaurant not found' });
+        return;
+      }
+    } catch {
+      res.status(503).json({ message: 'Restaurant service unavailable' });
+      return;
+    }
+
+    const favorite: Favorite = {
+      userId: req.user!.sub,
+      restaurantId: normalizedRestaurantId,
+      listName: normalizedListName
+    };
+    favorites.push(favorite);
+    res.status(201).json(favorite);
+  });
 
   app.get('/favorites/me', rateLimiter, requireAuth, (req, res) => {
     const userFavorites = favorites.filter((favorite) => favorite.userId === req.user?.sub);
