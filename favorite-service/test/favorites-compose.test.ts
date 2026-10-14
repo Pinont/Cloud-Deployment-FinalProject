@@ -6,8 +6,10 @@ const token = process.env.INTEGRATION_JWT;
 
 test(
   'IT-03: POST /favorites returns 404 when the real restaurant service has no restaurant',
-  { skip: !baseUrl || !token },
+  { skip: process.env.INTEGRATION_REQUIRED !== '1' },
   async () => {
+    assert.ok(baseUrl, 'INTEGRATION_BASE_URL must be set');
+    assert.ok(token, 'INTEGRATION_JWT must be set');
     const response = await fetch(`${baseUrl}/favorites`, {
       method: 'POST',
       headers: {
