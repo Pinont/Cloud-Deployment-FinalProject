@@ -175,7 +175,8 @@ test('POST /reviews when restaurant does not exist returns 404', async () => {
 test('POST /reviews successfully creates review with rating 5 and comment', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
-    checkRestaurantExists: async (id) => id === 'rest-1'
+    checkRestaurantExists: async (id) => id === 'rest-1',
+    updateRestaurantRating: async () => {}
   });
   const token = createToken('user-1');
 
@@ -203,7 +204,8 @@ test('POST /reviews successfully creates review with rating 5 and comment', asyn
 test('POST /reviews accepts decimal rating (4.5) and omitted comment', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
-    checkRestaurantExists: async () => true
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async () => {}
   });
   const token = createToken('user-2');
 
@@ -223,7 +225,8 @@ test('POST /reviews accepts decimal rating (4.5) and omitted comment', async () 
 test('RV-03: POST /reviews returns 409 when user reviews the same restaurant twice', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
-    checkRestaurantExists: async () => true
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async () => {}
   });
   const token = createToken('user-1');
 
@@ -255,7 +258,8 @@ test('RV-03: POST /reviews returns 409 when user reviews the same restaurant twi
 test('Allowed reviews: same user different restaurant and different user same restaurant succeed', async () => {
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
-    checkRestaurantExists: async () => true
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async () => {}
   });
   const token1 = createToken('user-1');
   const token2 = createToken('user-2');
@@ -308,7 +312,8 @@ test('POST /reviews trims whitespace from restaurantId for existence check and s
     checkRestaurantExists: async (id) => {
       checkedId = id;
       return true;
-    }
+    },
+    updateRestaurantRating: async () => {}
   });
   const token = createToken('user-1');
 
@@ -327,3 +332,99 @@ test('createApp throws error if JWT_SECRET is not provided', () => {
     createApp({ jwtSecret: '' });
   }, /JWT_SECRET must be set/);
 });
+
+test('RV-02: Sequential reviews with ratings 4, 5 and 3 result in avgRating 4.0 and reviewCount 3 sent to restaurant-service', async () => {
+  const calls: Array<{ restaurantId: string; avgRating: number; reviewCount: number }> = [];
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async (restaurantId, avgRating, reviewCount) => {
+      calls.push({ restaurantId, avgRating, reviewCount });
+    }
+  });
+
+  // User 1 posts rating 4
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-1')}`)
+    .send({ restaurantId: 'rest-rv-02', rating: 4 })
+    .expect(201);
+
+  // User 2 posts rating 5
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-2')}`)
+    .send({ restaurantId: 'rest-rv-02', rating: 5 })
+    .expect(201);
+
+  // User 3 posts rating 3
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-3')}`)
+    .send({ restaurantId: 'rest-rv-02', rating: 3 })
+    .expect(201);
+
+  assert.strictEqual(calls.length, 3);
+  assert.deepStrictEqual(calls[0], { restaurantId: 'rest-rv-02', avgRating: 4.0, reviewCount: 1 });
+  assert.deepStrictEqual(calls[1], { restaurantId: 'rest-rv-02', avgRating: 4.5, reviewCount: 2 });
+  assert.deepStrictEqual(calls[2], { restaurantId: 'rest-rv-02', avgRating: 4.0, reviewCount: 3 });
+});
+
+test('RV-POST-RATE-01: POST /reviews succeeds with 201 even if restaurant-service rating update fails', async () => {
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async () => {
+      throw new Error('restaurant-service network error');
+    }
+  });
+
+  const res = await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-fail')}`)
+    .send({ restaurantId: 'rest-fail', rating: 5, comment: 'Nice' })
+    .expect(201);
+
+  assert.strictEqual(res.body.restaurantId, 'rest-fail');
+  assert.strictEqual(res.body.rating, 5);
+
+  // Verify document was stored in DB
+  const stored = await Review.findById(res.body._id);
+  assert.ok(stored !== null);
+  assert.strictEqual(stored?.rating, 5);
+});
+
+test('RV-POST-RATE-02: Rating average rounds to 1 decimal place', async () => {
+  let lastUpdate: { avgRating: number; reviewCount: number } | null = null;
+  const app = createApp({
+    jwtSecret: TEST_JWT_SECRET,
+    checkRestaurantExists: async () => true,
+    updateRestaurantRating: async (_id, avgRating, reviewCount) => {
+      lastUpdate = { avgRating, reviewCount };
+    }
+  });
+
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-r1')}`)
+    .send({ restaurantId: 'rest-round', rating: 1 })
+    .expect(201);
+
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-r2')}`)
+    .send({ restaurantId: 'rest-round', rating: 2 })
+    .expect(201);
+
+  await request(app)
+    .post('/reviews')
+    .set('Authorization', `Bearer ${createToken('user-r3')}`)
+    .send({ restaurantId: 'rest-round', rating: 4 })
+    .expect(201);
+
+  assert.ok(lastUpdate);
+  // (1 + 2 + 4) / 3 = 7 / 3 = 2.3333... -> rounded to 2.3
+  assert.strictEqual((lastUpdate as { avgRating: number; reviewCount: number }).avgRating, 2.3);
+  assert.strictEqual((lastUpdate as { avgRating: number; reviewCount: number }).reviewCount, 3);
+});
+
