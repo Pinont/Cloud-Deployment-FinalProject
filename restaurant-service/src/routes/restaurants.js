@@ -76,6 +76,36 @@ router.post('/', requireAuth, async (req, res, next) => {
   }
 });
 
+// #9 — internal: review-service sends the recomputed average and count after a review
+// is added or deleted. Values are stored as given; the last review deleted → 0 / 0.
+router.patch('/:id/rating', async (req, res, next) => {
+  try {
+    const { avgRating, reviewCount } = req.body || {};
+    if (!Number.isInteger(reviewCount) || reviewCount < 0) {
+      return res.status(400).json({ error: 'reviewCount must be an integer >= 0' });
+    }
+    const validAvg = typeof avgRating === 'number' && avgRating >= 0 && avgRating <= 5;
+    if (!validAvg || (reviewCount === 0 && avgRating !== 0) || (reviewCount > 0 && avgRating < 1)) {
+      return res.status(400).json({
+        error: 'avgRating must be 1-5, or 0 when reviewCount is 0',
+      });
+    }
+    const restaurant = mongoose.isValidObjectId(req.params.id)
+      ? await Restaurant.findByIdAndUpdate(
+          req.params.id,
+          { avgRating, reviewCount },
+          { new: true },
+        )
+      : null;
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant not found' });
+    }
+    return res.json(restaurant);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // Loads req.params.id for #8; 404 if missing, 403 unless the token user is the owner.
 async function loadOwnRestaurant(req, res, next) {
   try {
