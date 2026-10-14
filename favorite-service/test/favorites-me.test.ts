@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import request from 'supertest';
+import request, { type Response as SupertestResponse } from 'supertest';
 
 import { createApp, type Favorite, type ShareLink } from '../src/app';
 
@@ -194,35 +194,72 @@ test('FV-SHARE-04: another user cannot revoke a shared list', async () => {
 test('FV-SHARE-05: overlapping share creation requests reuse the pending link', async () => {
   const sharedLinks: ShareLink[] = [];
   let persistCalls = 0;
-  let releasePersist: (() => void) | undefined;
+  let releasePersistence: (() => void) | undefined;
+  let markPersistenceStarted: (() => void) | undefined;
+  let markPendingShareReached: (() => void) | undefined;
   const persistenceStarted = new Promise<void>((resolve) => {
-    releasePersist = resolve;
+    markPersistenceStarted = resolve;
+  });
+  const pendingShareReached = new Promise<void>((resolve) => {
+    markPendingShareReached = resolve;
+  });
+  const persistenceReleased = new Promise<void>((resolve) => {
+    releasePersistence = resolve;
   });
   const app = createApp({
     jwtSecret: TEST_JWT_SECRET,
     sharedLinks,
     persistShareLink: async () => {
       persistCalls += 1;
-      await persistenceStarted;
-    }
+      markPersistenceStarted!();
+      await persistenceReleased;
+    },
+    onPendingShareCreation: () => markPendingShareReached!()
   });
   const token = jwt.sign({ sub: 'user-1' }, TEST_JWT_SECRET, { algorithm: 'HS256' });
 
   const firstResponsePromise = request(app)
     .post('/favorites/share')
     .auth(token, { type: 'bearer' })
-    .send({ listName: 'คาเฟ่อยากไป' });
-  await new Promise((resolve) => setImmediate(resolve));
-  const secondResponsePromise = request(app)
-    .post('/favorites/share')
-    .auth(token, { type: 'bearer' })
-    .send({ listName: 'คาเฟ่อยากไป' });
-  await new Promise((resolve) => setImmediate(resolve));
-  releasePersist!();
+    .send({ listName: 'คาเฟ่อยากไป' })
+    .then((response) => response);
+  let secondResponsePromise: Promise<SupertestResponse> | undefined;
+  try {
+    await Promise.race([
+      persistenceStarted,
+      firstResponsePromise.then(() => {
+        throw new Error('First share request completed before persistence started');
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out waiting for persistence to start')), 1000)
+      )
+    ]);
+    secondResponsePromise = request(app)
+      .post('/favorites/share')
+      .auth(token, { type: 'bearer' })
+      .send({ listName: 'คาเฟ่อยากไป' })
+      .then((response) => response);
+    await Promise.race([
+      pendingShareReached,
+      firstResponsePromise.then(() => {
+        throw new Error('First share request completed before pending request reached the handler');
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out waiting for pending share branch')), 1000)
+      )
+    ]);
+  } finally {
+    releasePersistence?.();
+    await Promise.allSettled(
+      [firstResponsePromise, secondResponsePromise].filter(
+        (promise): promise is Promise<SupertestResponse> => promise !== undefined
+      )
+    );
+  }
 
   const [firstResponse, secondResponse] = await Promise.all([
     firstResponsePromise,
-    secondResponsePromise
+    secondResponsePromise!
   ]);
   const statuses = [firstResponse.status, secondResponse.status].sort((a, b) => a - b);
 
