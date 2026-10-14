@@ -164,7 +164,13 @@ export function createApp({
       }
     }
 
-    favorites.splice(favoriteIndex, 1);
+    const currentFavoriteIndex = favorites.findIndex((candidate) => candidate === favorite);
+    if (currentFavoriteIndex === -1) {
+      res.status(404).json({ message: 'Favorite not found' });
+      return;
+    }
+
+    favorites.splice(currentFavoriteIndex, 1);
     res.status(204).send();
   });
 
