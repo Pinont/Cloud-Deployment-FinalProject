@@ -70,7 +70,7 @@ Notes:
 - Tags are only available for services whose `main` build succeeded at that commit.
 - A rollback does not undo data changes in MongoDB. There are no migrations; the services do not change
   stored data shapes between releases without a note in the pull request.
-- To go forward again, set `IMAGE_TAG=latest` and run `docker compose pull && docker compose up -d`.
+- To go forward again, remove or update any per-service `image:` override, set `IMAGE_TAG=latest`, and run `docker compose pull && docker compose up -d`.
 - A bad release can also be undone in Git by reverting the commit on `main`; the pipeline then publishes a
   fresh image for the revert.
 
