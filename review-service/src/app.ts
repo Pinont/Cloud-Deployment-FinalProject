@@ -1,4 +1,5 @@
 import express, { Express, Request, Response, Router } from 'express';
+import mongoose from 'mongoose';
 import { authenticate } from './auth';
 import { Review as DefaultReviewModel } from './model';
 import { createRestaurantClient, RestaurantExistsFn } from './restaurantClient';
@@ -129,6 +130,76 @@ export function createApp({
         avgRating: avg,
         reviewCount: summary[0].reviewCount
       });
+    } catch {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.post('/:id/like', requireAuth, async (req: Request, res: Response): Promise<void> => {
+    const rawId = req.params.id;
+    const reviewId = typeof rawId === 'string' ? rawId.trim() : '';
+
+    if (!mongoose.isValidObjectId(reviewId)) {
+      res.status(400).json({ error: 'Invalid review id' });
+      return;
+    }
+
+    const sub = req.user!.sub;
+
+    try {
+      const doc = await reviewModel.findOneAndUpdate(
+        { _id: reviewId, likedBy: { $ne: sub } },
+        { $addToSet: { likedBy: sub }, $inc: { likes: 1 } },
+        { new: true }
+      );
+
+      if (doc) {
+        res.status(200).json({ liked: true, likes: doc.likes || 0 });
+        return;
+      }
+
+      const existing = await reviewModel.findById(reviewId);
+      if (!existing) {
+        res.status(404).json({ error: 'Review not found' });
+        return;
+      }
+
+      res.status(200).json({ liked: true, likes: existing.likes || 0 });
+    } catch {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.delete('/:id/like', requireAuth, async (req: Request, res: Response): Promise<void> => {
+    const rawId = req.params.id;
+    const reviewId = typeof rawId === 'string' ? rawId.trim() : '';
+
+    if (!mongoose.isValidObjectId(reviewId)) {
+      res.status(400).json({ error: 'Invalid review id' });
+      return;
+    }
+
+    const sub = req.user!.sub;
+
+    try {
+      const doc = await reviewModel.findOneAndUpdate(
+        { _id: reviewId, likedBy: sub },
+        { $pull: { likedBy: sub }, $inc: { likes: -1 } },
+        { new: true }
+      );
+
+      if (doc) {
+        res.status(200).json({ liked: false, likes: doc.likes || 0 });
+        return;
+      }
+
+      const existing = await reviewModel.findById(reviewId);
+      if (!existing) {
+        res.status(404).json({ error: 'Review not found' });
+        return;
+      }
+
+      res.status(200).json({ liked: false, likes: existing.likes || 0 });
     } catch {
       res.status(500).json({ error: 'Internal server error' });
     }
