@@ -4,6 +4,17 @@ Owner: @phoo3011 (Tester)
 
 Port 3004. See issues labelled `service:favorite`. Start from `docs/templates/Dockerfile` and `docs/templates/.dockerignore`.
 
+## Unit tests
+
+Run the unit tests with the coverage threshold used by CI:
+
+```powershell
+npm test
+```
+
+The tests cover FV-01, FV-02, and FV-03. The command fails when line coverage
+for the application source is below 70%.
+
 ## Integration test
 
 Start the Compose stack with the gateway available at `http://localhost`, then
