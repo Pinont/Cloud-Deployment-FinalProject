@@ -2,13 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Restaurant = require('../models/restaurant');
 const { requireAuth } = require('../middleware/auth');
+const hours = require('../utils/hours');
 
 const router = express.Router();
 
 // #6 — public search: ?category=&price=&sort=rating
+// #37 — &openNow=true keeps only restaurants open at the current time.
 router.get('/', async (req, res, next) => {
   try {
-    const { category, price, sort } = req.query;
+    const { category, price, sort, openNow } = req.query;
     const filter = {};
 
     if (category !== undefined) {
@@ -27,9 +29,17 @@ router.get('/', async (req, res, next) => {
     if (sort !== undefined && sort !== 'rating') {
       return res.status(400).json({ error: 'sort must be "rating"' });
     }
+    if (openNow !== undefined && openNow !== 'true') {
+      return res.status(400).json({ error: 'openNow must be "true"' });
+    }
 
     const order = sort === 'rating' ? { avgRating: -1, reviewCount: -1 } : { createdAt: -1 };
-    const restaurants = await Restaurant.find(filter).sort(order);
+    let restaurants = await Restaurant.find(filter).sort(order);
+    if (openNow === 'true') {
+      // Overnight hours (e.g. 18:00–02:00) are easier to check here than in a Mongo query.
+      const now = hours.currentTime();
+      restaurants = restaurants.filter((r) => hours.isOpenAt(r.openTime, r.closeTime, now));
+    }
     return res.json(restaurants);
   } catch (err) {
     return next(err);
@@ -56,7 +66,7 @@ router.get('/:id', async (req, res, next) => {
 // #5 — logged-in users can add a restaurant; the creator becomes the owner.
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, category, priceRange, address } = req.body || {};
+    const { name, category, priceRange, address, openTime, closeTime } = req.body || {};
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -68,6 +78,8 @@ router.post('/', requireAuth, async (req, res, next) => {
       category,
       priceRange,
       address,
+      openTime,
+      closeTime,
       ownerId: req.user.id,
     });
     return res.status(201).json(restaurant);
@@ -125,9 +137,9 @@ async function loadOwnRestaurant(req, res, next) {
   }
 }
 
-const EDITABLE_FIELDS = ['name', 'category', 'priceRange', 'address'];
+const EDITABLE_FIELDS = ['name', 'category', 'priceRange', 'address', 'openTime', 'closeTime'];
 
-// #8 — owner updates name, category, priceRange or address (fields left out stay as they are).
+// #8 — owner updates the editable fields (fields left out stay as they are).
 router.put('/:id', requireAuth, loadOwnRestaurant, async (req, res, next) => {
   try {
     const body = req.body || {};
