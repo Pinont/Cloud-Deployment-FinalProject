@@ -18,7 +18,7 @@ for the application source is below 70%.
 ## Integration test
 
 Start the Compose stack with the gateway available at `http://localhost`, then
-provide a valid JWT issued by `auth-service` and run IT-03:
+provide a valid JWT issued by `auth-service` and run IT-01..03:
 
 ```powershell
 $env:INTEGRATION_JWT = '<valid JWT>'
