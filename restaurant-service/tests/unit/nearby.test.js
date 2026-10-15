@@ -72,6 +72,28 @@ describe('GET /restaurants?lat=&lng=&radius=', () => {
     expect(res.body.map((r) => r.name)).toEqual(['Silom']);
   });
 
+  test('combines with openNow=true (and sort=rating)', async () => {
+    const hours = require('../../src/utils/hours');
+    jest.spyOn(hours, 'currentTime').mockReturnValue('12:00');
+    await Restaurant.create([
+      // inside 5 km, open at 12:00
+      { name: 'Open Near A', priceRange: 1, ownerId: 'u1', lat: 13.746, lng: 100.535, openTime: '10:00', closeTime: '22:00', avgRating: 2 },
+      { name: 'Open Near B', priceRange: 1, ownerId: 'u1', lat: 13.76, lng: 100.54, openTime: '11:00', closeTime: '14:00', avgRating: 5 },
+      // inside 5 km, closed at 12:00
+      { name: 'Closed Near', priceRange: 1, ownerId: 'u1', lat: 13.745, lng: 100.534, openTime: '18:00', closeTime: '02:00' },
+      // open, but ~580 km away
+      { name: 'Open Far', priceRange: 1, ownerId: 'u1', lat: 18.7883, lng: 98.9853, openTime: '00:00', closeTime: '00:00' },
+    ]);
+
+    const byDistance = await request(app).get(`/restaurants?${SIAM}&openNow=true`);
+    expect(byDistance.body.map((r) => r.name)).toEqual(['Open Near A', 'Open Near B']);
+
+    const byRating = await request(app).get(`/restaurants?${SIAM}&openNow=true&sort=rating`);
+    expect(byRating.body.map((r) => r.name)).toEqual(['Open Near B', 'Open Near A']);
+
+    jest.restoreAllMocks();
+  });
+
   test('sort=rating orders the nearby results by rating instead', async () => {
     const res = await request(app).get(`/restaurants?${SIAM}&radius=10&sort=rating`);
     expect(res.body.map((r) => r.name)).toEqual(['Chatuchak', 'Siam Square', 'Silom']);
@@ -119,6 +141,9 @@ describe('coordinates on POST / PUT', () => {
     ['lat out of range', { lat: 100, lng: 100.5 }],
     ['lng out of range', { lat: 13.75, lng: 200 }],
     ['lat not a number', { lat: 'abc', lng: 100.5 }],
+    ['lat as a numeric string', { lat: '13.75', lng: 100.5 }],
+    ['lat as true', { lat: true, lng: 100.5 }],
+    ['lng as false', { lat: 13.75, lng: false }],
   ])('POST with %s → 400', async (_, body) => {
     const res = await request(app)
       .post('/restaurants')
@@ -138,5 +163,35 @@ describe('coordinates on POST / PUT', () => {
     expect(res.status).toBe(200);
     const near = await request(app).get(`/restaurants?${SIAM}&radius=0.5`);
     expect(near.body.map((r) => r.name)).toContain('Silom');
+  });
+
+  const putAs = (id, body) =>
+    request(app).put(`/restaurants/${id}`).set('Authorization', token('u1')).send(body);
+
+  test.each([
+    ['only lat on a restaurant without a location', 'No Location', { lat: 13.75 }],
+    ['clearing only lng', 'Silom', { lng: null }],
+    ['lat out of range', 'Silom', { lat: 95 }],
+    ['lng out of range', 'Silom', { lng: -181 }],
+    ['lat as true', 'Silom', { lat: true }],
+    ['lng as a string', 'Silom', { lng: '100.5' }],
+  ])('PUT with %s → 400, location unchanged', async (_, name, body) => {
+    const before = await Restaurant.findOne({ name });
+    const res = await putAs(before.id, body);
+
+    expect(res.status).toBe(400);
+    const after = await Restaurant.findById(before.id);
+    expect(after.lat).toEqual(before.lat);
+    expect(after.lng).toEqual(before.lng);
+  });
+
+  test('PUT can clear both coordinates together', async () => {
+    const silom = await Restaurant.findOne({ name: 'Silom' });
+    const res = await putAs(silom.id, { lat: null, lng: null });
+
+    expect(res.status).toBe(200);
+    const after = await Restaurant.findById(silom.id);
+    expect(after.lat).toBeNull();
+    expect(after.lng).toBeNull();
   });
 });

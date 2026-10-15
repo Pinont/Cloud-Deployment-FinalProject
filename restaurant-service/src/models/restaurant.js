@@ -15,9 +15,16 @@ const restaurantSchema = new mongoose.Schema(
     address: { type: String, trim: true },
     openTime: { type: String, match: [HHMM, 'openTime must be HH:mm (00:00-23:59)'] },
     closeTime: { type: String, match: [HHMM, 'closeTime must be HH:mm (00:00-23:59)'] },
-    lat: { type: Number, min: [-90, 'lat must be -90 to 90'], max: [90, 'lat must be -90 to 90'] },
+    // cast: false — only real numbers; "13.7" or true would otherwise be cast to 13.7 / 1.
+    lat: {
+      type: Number,
+      cast: false,
+      min: [-90, 'lat must be -90 to 90'],
+      max: [90, 'lat must be -90 to 90'],
+    },
     lng: {
       type: Number,
+      cast: false,
       min: [-180, 'lng must be -180 to 180'],
       max: [180, 'lng must be -180 to 180'],
     },
