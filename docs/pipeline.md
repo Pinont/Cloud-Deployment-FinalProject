@@ -41,11 +41,12 @@ flowchart LR
 
 ## Integration and E2E
 
-`e2e.yml` runs after a successful service workflow on `main` (or on manual dispatch). It pulls the four
-service images tagged `latest`, starts the compose stack, and runs E2E-01 (Playwright) through the gateway.
+`e2e.yml` runs after a successful service workflow on `main` (or on manual dispatch). Its integration job
+pulls the four service images tagged `latest`, starts the compose stack, and runs IT-01..03 through the
+gateway; its E2E job runs E2E-01 (Playwright) through a separate compose stack.
 The workflow uploads the Playwright report on every run and tears down the stack even when a test fails. The
-service workflows still publish `sha-<commit>` and `latest` after their unit gates; E2E is the verification
-step for the published `latest` images and does not promote images or run IT-01..03.
+service workflows still publish `sha-<commit>` and `latest` after their unit gates; integration and E2E are
+verification steps for the published `latest` images and do not promote images.
 
 ## Who owns what
 
