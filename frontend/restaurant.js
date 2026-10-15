@@ -51,44 +51,59 @@ async function loadReviews() {
 
 $('review-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  $('review-error').textContent = '';
-  const data = new FormData(e.target);
-  const res = await api('/reviews', {
-    method: 'POST',
-    body: JSON.stringify({
-      restaurantId,
-      rating: Number(data.get('rating')),
-      comment: String(data.get('comment') || '').trim(),
-    }),
-  });
-  if (res.status === 401) {
-    showSessionExpired();
-    return;
+  // One request at a time: a double-click would otherwise send a second one that the server rejects (409).
+  const button = e.target.querySelector('button[type=submit]');
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    $('review-error').textContent = '';
+    const data = new FormData(e.target);
+    const res = await api('/reviews', {
+      method: 'POST',
+      body: JSON.stringify({
+        restaurantId,
+        rating: Number(data.get('rating')),
+        comment: String(data.get('comment') || '').trim(),
+      }),
+    });
+    if (res.status === 401) {
+      showSessionExpired();
+      return;
+    }
+    if (!res.ok) {
+      $('review-error').textContent = errorText(res, 'Could not post the review.');
+      return;
+    }
+    e.target.reset();
+    await Promise.all([loadReviews(), loadRestaurant()]);
+  } finally {
+    button.disabled = false;
   }
-  if (!res.ok) {
-    $('review-error').textContent = errorText(res, 'Could not post the review.');
-    return;
-  }
-  e.target.reset();
-  await Promise.all([loadReviews(), loadRestaurant()]);
 });
 
-$('favorite').addEventListener('click', async () => {
+$('favorite').addEventListener('click', async (e) => {
+  const button = e.currentTarget;
+  if (button.disabled) return;
   const out = $('favorite-status');
   if (!getToken()) {
     out.textContent = 'Log in to save restaurants.';
     return;
   }
-  const res = await api('/favorites', { method: 'POST', body: JSON.stringify({ restaurantId }) });
-  if (res.status === 401) {
-    showSessionExpired();
-    out.textContent = 'Your session expired. Log in again.';
-  } else if (res.status === 409) {
-    out.textContent = 'Already in your favourites.';
-  } else if (!res.ok) {
-    out.textContent = errorText(res, 'Could not save this restaurant.');
-  } else {
-    out.textContent = 'Saved to your favourites.';
+  button.disabled = true;
+  try {
+    const res = await api('/favorites', { method: 'POST', body: JSON.stringify({ restaurantId }) });
+    if (res.status === 401) {
+      showSessionExpired();
+      out.textContent = 'Your session expired. Log in again.';
+    } else if (res.status === 409) {
+      out.textContent = 'Already in your favourites.';
+    } else if (!res.ok) {
+      out.textContent = errorText(res, 'Could not save this restaurant.');
+    } else {
+      out.textContent = 'Saved to your favourites.';
+    }
+  } finally {
+    button.disabled = false;
   }
 });
 
