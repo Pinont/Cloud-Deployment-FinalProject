@@ -71,10 +71,10 @@ Fact sheets from the code on `main`. Rewrite them in your own words; each person
 questions underneath.
 
 ### @Pinont: auth-service (port 3001), gateway, frontend, pipeline
-- **Does:** registration, login with a 1-hour JWT (HS256), refresh tokens, profile (`/auth/me`), and a 15-minute
-  lockout after 5 wrong passwords (423).
-- **Endpoints:** `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `PUT /auth/me`.
-- **Tests:** AU-01 to AU-04 and IT-01 (no token → 401); Jest with a 70% line-coverage gate.
+- **Does:** registration, login with a 1-hour JWT (HS256), refresh tokens, profile (`/auth/me`), a 15-minute
+  lockout after 5 wrong passwords (423), and `user` / `owner` / `admin` roles carried in the token.
+- **Endpoints:** `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `PUT /auth/me`, and `PUT /auth/users/:id/role` (admin only; the first admin is made with `npm run set-role -- <email> admin`).
+- **Tests:** AU-01 to AU-04 and IT-01 (no token → 401), plus lockout, refresh-token and role tests; Jest with a 70% line-coverage gate.
 - **Pipeline:** `auth-service.yml` calls `_service-ci.yml`; the PM owns the reusable workflow, the compose files, nginx and the docs.
 
 ### @Hydra07188: restaurant-service (port 3002)
@@ -104,6 +104,5 @@ questions underneath.
 
 ## Things to be honest about
 - IT-02 has no automated test yet, and E2E-01 with the Playwright workflow is still open (#30, #31).
-- Owner and admin roles (#36) are not done.
 - The publish job pushes `sha-<commit>` and `latest` right after the unit tests; the planned step that promotes images only after the integration and E2E tests pass does not exist yet (`pipeline.md`).
 - The website cannot add restaurants or show the favourites list; use the API for that.
