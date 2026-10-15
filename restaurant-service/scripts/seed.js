@@ -1,5 +1,6 @@
 // #100 — seeds sample restaurants. Idempotent: re-running updates them, never duplicates.
-// Usage: MONGO_URI=mongodb://localhost:27017/restaurant-db npm run seed
+// Usage (compose): docker compose exec restaurant npm run seed
+// Usage (local):   MONGO_URI=mongodb://localhost:27017/restaurant-db npm run seed
 const mongoose = require('mongoose');
 const Restaurant = require('../src/models/restaurant');
 
