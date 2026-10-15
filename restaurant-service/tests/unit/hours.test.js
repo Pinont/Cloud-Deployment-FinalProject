@@ -35,7 +35,27 @@ describe('currentTime', () => {
     expect(currentTime(date, 'UTC')).toBe('17:05');
   });
 
-  test('defaults to Asia/Bangkok', () => {
-    expect(currentTime(new Date('2026-10-15T03:00:00Z'))).toBe('10:00');
+  // Load hours.js again with a given TIME_ZONE, because it reads the env when it loads.
+  const loadWithTimeZone = (value) => {
+    const saved = process.env.TIME_ZONE;
+    if (value === undefined) delete process.env.TIME_ZONE;
+    else process.env.TIME_ZONE = value;
+    let mod;
+    jest.isolateModules(() => {
+      mod = require('../../src/utils/hours');
+    });
+    if (saved === undefined) delete process.env.TIME_ZONE;
+    else process.env.TIME_ZONE = saved;
+    return mod;
+  };
+
+  test('defaults to Asia/Bangkok when TIME_ZONE is not set', () => {
+    const { currentTime: now } = loadWithTimeZone(undefined);
+    expect(now(new Date('2026-10-15T03:00:00Z'))).toBe('10:00');
+  });
+
+  test('uses TIME_ZONE when it is set', () => {
+    const { currentTime: now } = loadWithTimeZone('UTC');
+    expect(now(new Date('2026-10-15T03:00:00Z'))).toBe('03:00');
   });
 });
