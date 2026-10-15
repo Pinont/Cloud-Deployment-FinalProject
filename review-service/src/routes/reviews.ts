@@ -1,11 +1,16 @@
 import { Request, Response, Router, RequestHandler } from 'express';
 import mongoose from 'mongoose';
 import { Review as DefaultReviewModel } from '../models/review';
-import { RestaurantExistsFn, UpdateRestaurantRatingFn } from '../clients/restaurantClient';
+import {
+  RestaurantExistsFn,
+  GetRestaurantOwnerFn,
+  UpdateRestaurantRatingFn
+} from '../clients/restaurantClient';
 
 export interface CreateReviewRouterOptions {
   requireAuth: RequestHandler;
   checkRestaurantExists: RestaurantExistsFn;
+  getRestaurantOwner?: GetRestaurantOwnerFn;
   updateRestaurantRating?: UpdateRestaurantRatingFn;
   reviewModel?: typeof DefaultReviewModel;
 }
@@ -80,6 +85,7 @@ function runPerRestaurant<T>(restaurantId: string, task: () => Promise<T>): Prom
 export function createReviewRouter({
   requireAuth,
   checkRestaurantExists,
+  getRestaurantOwner,
   updateRestaurantRating,
   reviewModel = DefaultReviewModel
 }: CreateReviewRouterOptions): Router {
@@ -246,6 +252,75 @@ export function createReviewRouter({
       }
 
       res.status(200).json({ liked: false, likes: existing.likes || 0 });
+    } catch {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.post('/:id/reply', requireAuth, async (req: Request, res: Response): Promise<void> => {
+    const rawId = req.params.id;
+    const reviewId = typeof rawId === 'string' ? rawId.trim() : '';
+
+    if (!mongoose.isValidObjectId(reviewId)) {
+      res.status(400).json({ error: 'Invalid review id' });
+      return;
+    }
+
+    const { comment } = req.body || {};
+    if (typeof comment !== 'string' || comment.trim() === '') {
+      res.status(400).json({ error: 'comment is required' });
+      return;
+    }
+
+    const sub = req.user!.sub;
+
+    try {
+      const review = await reviewModel.findById(reviewId);
+      if (!review) {
+        res.status(404).json({ error: 'Review not found' });
+        return;
+      }
+
+      if (review.reply && review.reply.comment) {
+        res.status(409).json({ error: 'Review already has a reply' });
+        return;
+      }
+
+      if (!getRestaurantOwner) {
+        res.status(500).json({ error: 'Owner verification service not configured' });
+        return;
+      }
+
+      let ownerId: string | null;
+      try {
+        ownerId = await getRestaurantOwner(review.restaurantId);
+      } catch {
+        res.status(503).json({ error: 'Restaurant service unavailable' });
+        return;
+      }
+
+      if (ownerId === null) {
+        res.status(404).json({ error: 'Restaurant not found' });
+        return;
+      }
+
+      if (ownerId !== sub) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+
+      const updated = await reviewModel.findOneAndUpdate(
+        { _id: reviewId, 'reply.comment': { $exists: false } },
+        { $set: { reply: { comment: comment.trim(), createdAt: new Date() } } },
+        { new: true }
+      );
+
+      if (!updated) {
+        res.status(409).json({ error: 'Review already has a reply' });
+        return;
+      }
+
+      res.status(201).json({ reply: updated.reply });
     } catch {
       res.status(500).json({ error: 'Internal server error' });
     }
