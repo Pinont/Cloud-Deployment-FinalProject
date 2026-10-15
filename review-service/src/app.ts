@@ -4,6 +4,7 @@ import { Review as DefaultReviewModel } from './models/review';
 import {
   createRestaurantClient,
   RestaurantExistsFn,
+  GetRestaurantOwnerFn,
   UpdateRestaurantRatingFn
 } from './clients/restaurantClient';
 import { createReviewRouter } from './routes/reviews';
@@ -11,6 +12,7 @@ import { createReviewRouter } from './routes/reviews';
 export interface CreateAppOptions {
   jwtSecret?: string;
   checkRestaurantExists?: RestaurantExistsFn;
+  getRestaurantOwner?: GetRestaurantOwnerFn;
   updateRestaurantRating?: UpdateRestaurantRatingFn;
   reviewModel?: typeof DefaultReviewModel;
 }
@@ -18,6 +20,7 @@ export interface CreateAppOptions {
 export function createApp({
   jwtSecret = process.env.JWT_SECRET,
   checkRestaurantExists = createRestaurantClient().checkRestaurantExists,
+  getRestaurantOwner = createRestaurantClient().getRestaurantOwner,
   updateRestaurantRating = createRestaurantClient().updateRestaurantRating,
   reviewModel = DefaultReviewModel
 }: CreateAppOptions = {}): Express {
@@ -41,6 +44,7 @@ export function createApp({
     createReviewRouter({
       requireAuth,
       checkRestaurantExists,
+      getRestaurantOwner,
       updateRestaurantRating,
       reviewModel
     })
