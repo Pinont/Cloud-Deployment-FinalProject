@@ -15,6 +15,7 @@ diagram ready to show. Background: [`deploy-plan.md`](deploy-plan.md), [`pipelin
 - [ ] Pull the images once before presenting: `docker compose pull` (a first pull can be slow).
 - [ ] Have open: the repository, the Actions tab, the Docker Hub tags page, `docs/pipeline.md`
       (the Mermaid diagram) and `docs/deploy-plan.md`.
+- [ ] Write down an older `sha-<commit>` tag of the service you will change, and check it exists on Docker Hub (rollback, step 9).
 - [ ] Pick the small change for step 2 in advance (see below) and have a second finished example run in the
       Actions tab in case the live run is slow.
 
@@ -30,7 +31,7 @@ diagram ready to show. Background: [`deploy-plan.md`](deploy-plan.md), [`pipelin
 | 6 | Open `http://localhost/`, register, log in | The login page talks to auth-service through the gateway. | The welcome view shows your name and role |
 | 7 | Add a restaurant (see the commands below), open **Browse restaurants**, filter by category and price, sort by rating | Search is restaurant-service. | The restaurant is listed |
 | 8 | Open the restaurant, post a review, save it to favourites | Review-service updates the restaurant's average rating; favorite-service keeps the list. | The review appears; the average and count update; "Saved to your favourites" |
-| 9 | Roll back: set `IMAGE_TAG=sha-<an older commit>` in `.env`, then `docker compose up -d` | Rollback is just pinning an earlier tag. | Containers are recreated with the old images |
+| 9 | Roll back **one service**: add a `docker-compose.override.yml` that pins only the service you changed in step 2 to an older tag (see below), then `docker compose up -d` | Rollback is pinning an earlier `sha-<commit>` tag. Only that service is recreated. | That service runs the old image; the others are untouched |
 
 The website cannot create restaurants yet, so add one with `curl` after logging in (replace the values):
 
@@ -38,13 +39,27 @@ The website cannot create restaurants yet, so add one with `curl` after logging 
 # register and log in (skip register if the account exists)
 curl -s -X POST http://localhost/api/auth/register -H 'Content-Type: application/json' \
   -d '{"email":"demo@example.com","password":"password123","name":"Demo"}'
-curl -s -X POST http://localhost/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"demo@example.com","password":"password123"}'      # copy the "token" value
+TOKEN=$(curl -s -X POST http://localhost/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"demo@example.com","password":"password123"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+echo "$TOKEN"          # must print a long token; if it is empty, the login failed (or paste it: TOKEN='<paste token here>')
 
 curl -s -X POST http://localhost/api/restaurants -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"Thai Garden","category":"thai","priceRange":2,"address":"1 Main St"}'
 ```
+
+A `sha-<commit>` tag exists only for the services that changed (or whose workflow changed) at that commit, so one
+old tag is usually **not** available for all four images. Roll back the service you changed in step 2, and look up
+its older tag on Docker Hub beforehand:
+
+```yaml
+# docker-compose.override.yml (Compose reads it automatically next to docker-compose.yml)
+services:
+  auth:     # the service you changed in step 2
+    image: ${DOCKERHUB_USERNAME}/auth-service:sha-<an older commit that exists on Docker Hub>
+```
+
+Do not set `IMAGE_TAG` to an old commit for the whole stack unless you have checked that tag exists for all four images.
 
 If something goes wrong: show the finished run you prepared in the Actions tab for steps 2 to 4; for step 5,
 `docker compose logs <service>` shows why a container stopped (a missing `JWT_SECRET` or `DOCKERHUB_USERNAME`
@@ -83,7 +98,7 @@ questions underneath.
 ### Questions everyone should be able to answer
 1. What starts the pipeline, and why does only your service's workflow run? (path filter)
 2. What stops a bad build from reaching Docker Hub? (lint and tests with the coverage gate; `publish` only on `main`)
-3. How do I run the whole system, and how do I roll back? (`docker compose up -d`; pin `IMAGE_TAG=sha-<commit>`)
+3. How do I run the whole system, and how do I roll back? (`docker compose up -d`; pin the service's image to an earlier `sha-<commit>` tag)
 4. How does your service know who the user is? (the shared `JWT_SECRET`; each service verifies the token itself)
 5. Which services call each other? (review → restaurant for the existence check and rating update; favorite → restaurant for the existence check)
 
