@@ -8,6 +8,7 @@ on:
       - restaurant-service
       - review-service
       - favorite-service
+    branches: [main]
     types: [completed]
 
 permissions:
