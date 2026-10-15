@@ -183,9 +183,20 @@ router.put('/me', requireAuth, async (req, res, next) => {
   }
 });
 
+// Role changes run one at a time (per auth-service process). The caller is re-read as an admin and
+// the change is made inside the same turn, so no other change can demote the caller in between.
+let roleChanges = Promise.resolve();
+function oneAtATime(task) {
+  const result = roleChanges.then(task, task);
+  roleChanges = result.catch(() => {});
+  return result;
+}
+
 // Admin-only. The only way to change a role over HTTP; the first admin is made with
-// `npm run set-role -- <email> admin` (see scripts/set-role.js). Admins cannot change their
-// own role, so at least one admin always remains.
+// `npm run set-role -- <email> admin` (see scripts/set-role.js). Admins cannot change their own
+// role, and the caller is still an admin when the change is made (see oneAtATime), so changing
+// someone else always leaves at least one admin: the caller. This holds for one auth-service
+// process; running several would need a database transaction or lock instead.
 router.put('/users/:id/role', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {
     const { role } = req.body || {};
@@ -200,23 +211,19 @@ router.put('/users/:id/role', requireAuth, requireRole('admin'), async (req, res
     if (targetId.equals(req.user.id)) {
       return res.status(400).json({ error: 'You cannot change your own role' });
     }
-    // The token may be up to an hour old, so confirm the caller is still an admin in the database.
-    const caller = await User.findById(req.user.id);
-    if (!caller || caller.role !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const user = await User.findByIdAndUpdate(targetId, { role }, { new: false });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    // Two admins demoting each other at the same time would both pass the checks above, so
-    // after removing an admin, undo it if that left no admin at all.
-    if (user.role === 'admin' && role !== 'admin' && (await User.countDocuments({ role: 'admin' })) === 0) {
-      await User.updateOne({ _id: targetId, role }, { role: 'admin' });
-      return res.status(409).json({ error: 'There must be at least one admin' });
-    }
-    user.role = role;
-    return res.status(200).json(user.toPublic());
+    const result = await oneAtATime(async () => {
+      // The token may be up to an hour old, so confirm the caller is still an admin in the database.
+      const caller = await User.findById(req.user.id);
+      if (!caller || caller.role !== 'admin') {
+        return { status: 403, body: { error: 'Forbidden' } };
+      }
+      const user = await User.findByIdAndUpdate(targetId, { role }, { new: true });
+      if (!user) {
+        return { status: 404, body: { error: 'User not found' } };
+      }
+      return { status: 200, body: user.toPublic() };
+    });
+    return res.status(result.status).json(result.body);
   } catch (err) {
     return next(err);
   }

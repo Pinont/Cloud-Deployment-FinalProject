@@ -113,12 +113,20 @@ describe('PUT /auth/users/:id/role', () => {
     expect((await User.findById(admin.id)).role).toBe('admin');
   });
 
-  test('two admins demoting each other at the same time never leave no admin', async () => {
+  test('two admins demoting each other at the same time: one succeeds, the other is refused, one admin remains', async () => {
     const a = await makeUser('a@example.com', 'admin');
     const b = await makeUser('b@example.com', 'admin');
     const results = await Promise.all([setRole(a, b.id, 'user'), setRole(b, a.id, 'user')]);
+    expect(results.map((res) => res.status).sort()).toEqual([200, 403]);
+    expect(await User.countDocuments({ role: 'admin' })).toBe(1);
+  });
+
+  test('overlapping role changes on the same account never leave no admin', async () => {
+    const a = await makeUser('a@example.com', 'admin');
+    const b = await makeUser('b@example.com', 'admin');
+    // A demotes B while B changes A to two different roles at the same time.
+    await Promise.all([setRole(a, b.id, 'user'), setRole(b, a.id, 'user'), setRole(b, a.id, 'owner')]);
     expect(await User.countDocuments({ role: 'admin' })).toBeGreaterThanOrEqual(1);
-    results.forEach((res) => expect([200, 403, 409]).toContain(res.status));
   });
 
   test('role cannot be changed through PUT /auth/me', async () => {
