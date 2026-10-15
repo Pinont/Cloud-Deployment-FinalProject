@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restaurant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wide">
+    <nav><a href="/">Log in</a> · <a href="restaurants.html">Restaurants</a></nav>
+    <p id="status" role="status"></p>
+
+    <section id="details" hidden>
+      <h1 id="name"></h1>
+      <p id="meta" class="meta"></p>
+      <p id="rating" class="rating"></p>
+      <button type="button" id="favorite">Save to favourites</button>
+      <p id="favorite-status" role="status"></p>
+    </section>
+
+    <section id="reviews-section" hidden>
+      <h2>Reviews</h2>
+      <form id="review-form" hidden>
+        <label>Rating
+          <select name="rating" required>
+            <option value="">Choose…</option>
+            <option value="5">5 – great</option>
+            <option value="4">4</option>
+            <option value="3">3</option>
+            <option value="2">2</option>
+            <option value="1">1 – poor</option>
+          </select>
+        </label>
+        <label>Comment <textarea name="comment" rows="3" maxlength="1000"></textarea></label>
+        <button type="submit">Post review</button>
+        <p class="error" id="review-error" role="alert"></p>
+      </form>
+      <p id="login-hint" hidden><a href="/">Log in</a> to write a review or save this restaurant.</p>
+      <ul id="reviews" class="cards"></ul>
+    </section>
+  </main>
+  <script src="common.js"></script>
+  <script src="restaurant.js"></script>
+</body>
+</html>
