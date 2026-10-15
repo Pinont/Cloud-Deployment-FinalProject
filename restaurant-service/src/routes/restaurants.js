@@ -3,15 +3,44 @@ const mongoose = require('mongoose');
 const Restaurant = require('../models/restaurant');
 const { requireAuth } = require('../middleware/auth');
 const hours = require('../utils/hours');
+const geo = require('../utils/geo');
 
 const router = express.Router();
 
+// Query values arrive as strings; an empty or missing value is NaN, not 0.
+const toNumber = (value) =>
+  typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+
+// #38 — validates ?lat=&lng=&radius=. Returns { point, radiusKm }, null when no
+// coordinates were sent, or { error } for a 400.
+function parseNearby({ lat, lng, radius }) {
+  if (lat === undefined && lng === undefined) {
+    return radius === undefined ? null : { error: 'radius needs lat and lng' };
+  }
+  const point = { lat: toNumber(lat), lng: toNumber(lng) };
+  if (!geo.isLatitude(point.lat) || !geo.isLongitude(point.lng)) {
+    return { error: 'lat must be -90 to 90 and lng -180 to 180' };
+  }
+  const radiusKm = radius === undefined ? geo.DEFAULT_RADIUS_KM : toNumber(radius);
+  if (!(radiusKm > 0 && radiusKm <= geo.MAX_RADIUS_KM)) {
+    return { error: `radius must be a number of km, greater than 0 and at most ${geo.MAX_RADIUS_KM}` };
+  }
+  return { point, radiusKm };
+}
+
 // #6 — public search: ?category=&price=&sort=rating
 // #37 — &openNow=true keeps only restaurants open at the current time.
+// #38 — &lat=&lng=&radius= (km, default 5) keeps restaurants within the radius, nearest first,
+//        each with distanceKm. sort=rating, if given, orders them by rating instead.
 router.get('/', async (req, res, next) => {
   try {
     const { category, price, sort, openNow } = req.query;
     const filter = {};
+
+    const nearby = parseNearby(req.query);
+    if (nearby && nearby.error) {
+      return res.status(400).json({ error: nearby.error });
+    }
 
     if (category !== undefined) {
       if (typeof category !== 'string' || !category.trim()) {
@@ -40,6 +69,18 @@ router.get('/', async (req, res, next) => {
       const now = hours.currentTime();
       restaurants = restaurants.filter((r) => hours.isOpenAt(r.openTime, r.closeTime, now));
     }
+    if (nearby) {
+      const withDistance = restaurants
+        .filter((r) => r.lat != null && r.lng != null)
+        .map((r) => ({ ...r.toJSON(), distanceKm: geo.distanceKm(nearby.point, r) }))
+        .filter((r) => r.distanceKm <= nearby.radiusKm);
+      if (sort !== 'rating') {
+        withDistance.sort((a, b) => a.distanceKm - b.distanceKm);
+      }
+      return res.json(
+        withDistance.map((r) => ({ ...r, distanceKm: Math.round(r.distanceKm * 100) / 100 })),
+      );
+    }
     return res.json(restaurants);
   } catch (err) {
     return next(err);
@@ -66,7 +107,7 @@ router.get('/:id', async (req, res, next) => {
 // #5 — logged-in users can add a restaurant; the creator becomes the owner.
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, category, priceRange, address, openTime, closeTime } = req.body || {};
+    const { name, category, priceRange, address, openTime, closeTime, lat, lng } = req.body || {};
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -80,6 +121,8 @@ router.post('/', requireAuth, async (req, res, next) => {
       address,
       openTime,
       closeTime,
+      lat,
+      lng,
       ownerId: req.user.id,
     });
     return res.status(201).json(restaurant);
@@ -137,7 +180,16 @@ async function loadOwnRestaurant(req, res, next) {
   }
 }
 
-const EDITABLE_FIELDS = ['name', 'category', 'priceRange', 'address', 'openTime', 'closeTime'];
+const EDITABLE_FIELDS = [
+  'name',
+  'category',
+  'priceRange',
+  'address',
+  'openTime',
+  'closeTime',
+  'lat',
+  'lng',
+];
 
 // #8 — owner updates the editable fields (fields left out stay as they are).
 router.put('/:id', requireAuth, loadOwnRestaurant, async (req, res, next) => {
