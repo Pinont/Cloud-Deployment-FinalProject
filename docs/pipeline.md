@@ -39,12 +39,13 @@ flowchart LR
   merge --> gh
 ```
 
-## Planned: integration and E2E
+## Integration and E2E
 
-The Test Spec describes an `e2e.yml` that pulls the candidate images, runs IT-01..03 and E2E-01 (Playwright)
-through the gateway, and only then promotes them to the release tags. It is owned by the Tester and is not
-built yet; today `publish` pushes `sha-<commit>` and `latest` right after the unit gate. When `e2e.yml`
-exists, this doc and `deploy-plan.md` should describe the candidate-tag step.
+`e2e.yml` runs after a successful service workflow on `main` (or on manual dispatch). It pulls the four
+service images tagged `latest`, starts the compose stack, and runs E2E-01 (Playwright) through the gateway.
+The workflow uploads the Playwright report on every run and tears down the stack even when a test fails. The
+service workflows still publish `sha-<commit>` and `latest` after their unit gates; E2E is the verification
+step for the published `latest` images and does not promote images or run IT-01..03.
 
 ## Who owns what
 
