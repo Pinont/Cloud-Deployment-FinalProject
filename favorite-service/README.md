@@ -25,10 +25,7 @@ $env:INTEGRATION_JWT = '<valid JWT>'
 npm run test:integration
 ```
 
-The runner executes IT-01, IT-02, and IT-03. IT-02 registers a temporary user,
-creates a restaurant, posts and deletes a review, and verifies the restaurant's
-rating and review count after each operation. The runner uses
-`http://localhost/api` by default. Set
+The runner uses `http://localhost/api` by default. Set
 `INTEGRATION_BASE_URL` when the gateway uses another URL. It fails when
 `INTEGRATION_JWT` is missing instead of silently skipping the integration test.
 

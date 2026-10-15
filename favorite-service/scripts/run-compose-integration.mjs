@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const token = process.env.INTEGRATION_JWT;
 if (!token) {
-  console.error('INTEGRATION_JWT must be set to run IT-01..03 against Docker Compose');
+  console.error('INTEGRATION_JWT must be set to run IT-03 against Docker Compose');
   process.exit(1);
 }
 
