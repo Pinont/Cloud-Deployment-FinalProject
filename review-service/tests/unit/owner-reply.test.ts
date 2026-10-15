@@ -381,3 +381,25 @@ test('RV-REPLY-13: createRestaurantClient behaves correctly with real fetch mock
     global.fetch = originalFetch;
   }
 });
+
+test('RV-REPLY-14: Unanswered reviews have no reply field when created or queried with GET', async () => {
+  const app = createApp({ jwtSecret: TEST_JWT_SECRET });
+  const review = await Review.create({
+    userId: 'customer-1',
+    restaurantId: 'rest-unanswered',
+    rating: 5,
+    comment: 'Great!'
+  });
+
+  assert.strictEqual(review.reply, undefined);
+
+  const res = await request(app)
+    .get('/reviews/restaurant/rest-unanswered')
+    .expect(200);
+
+  assert.strictEqual(Array.isArray(res.body), true);
+  assert.strictEqual(res.body.length, 1);
+  assert.strictEqual(res.body[0].comment, 'Great!');
+  assert.strictEqual(res.body[0].reply, undefined);
+});
+
