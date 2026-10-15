@@ -14,9 +14,6 @@ How the system is built, released, run and rolled back. For the pipeline stages 
 There is no hosted environment; "deploy" means running the compose stack with the published images.
 Services are `auth-service`, `restaurant-service`, `review-service` and `favorite-service`.
 
-> `docker-compose.yml`, `docker-compose.dev.yml` and `.env.example` come from ticket #20 (PR #58). The
-> run and rollback steps below apply once that has merged.
-
 ## Branch flow
 
 `feature/*` → pull request → `develop` → pull request → `main`.
@@ -50,8 +47,6 @@ The real `.env` is git-ignored. Never commit it.
    - `docker compose ps` shows every container running and `mongo` healthy.
    - Open `http://localhost/`: the login page loads.
    - `POST /api/auth/register` and `POST /api/auth/login` work through the gateway.
-5. Create the first admin (optional, for owner/admin roles):
-   `docker compose exec auth npm run set-role -- <email> admin`.
 
 ## Rollback
 
@@ -70,7 +65,7 @@ Notes:
 - Tags are only available for services whose `main` build succeeded at that commit.
 - A rollback does not undo data changes in MongoDB. There are no migrations; the services do not change
   stored data shapes between releases without a note in the pull request.
-- To go forward again, set `IMAGE_TAG=latest` and run `docker compose pull && docker compose up -d`.
+- To go forward again, remove or update any per-service `image:` override, set `IMAGE_TAG=latest`, and run `docker compose pull && docker compose up -d`.
 - A bad release can also be undone in Git by reverting the commit on `main`; the pipeline then publishes a
   fresh image for the revert.
 
@@ -79,9 +74,9 @@ Notes:
 Weeks follow the ticket plan (extras in week 4, demo in week 5).
 
 - [x] **Week 1, foundation:** monorepo, CODEOWNERS and templates (#2), reusable CI/CD and Docker Hub push (#12), Nginx gateway (#13), Test Spec (#3)
-- [ ] **Week 2, core services:** auth register, login and `/auth/me` (done); restaurant, review and favorite endpoints (in progress, owners per CODEOWNERS)
-- [ ] **Week 3, tests and CI per service:** auth unit tests, coverage ≥ 70% and workflow (done); the same for restaurant, review and favorite; docker-compose (#20, in review); login and register page (done); restaurant and review pages
-- [ ] **Week 4, extras and integration:** auth lockout, refresh token and roles (done or in review); service extras; integration tests IT-01 to IT-03; E2E workflow and E2E-01 with Playwright
+- [x] **Week 2, core services:** auth register, login and `/auth/me`; restaurant, review and favorite core endpoints
+- [ ] **Week 3, tests, CI and pages:** done: a unit-test and CI workflow for each of the four services, docker-compose (#20), login and register page (#21). Left: restaurant search page and restaurant/review page (#22)
+- [ ] **Week 4, extras and integration:** done: auth refresh token and the lockout, restaurant "open now" and nearby search, review likes, favorite multiple and shared lists, integration tests IT-01 and IT-03 (#29). Left: owner/admin roles (#36), review owner reply and images (#40, #41), E2E workflow and E2E-01 with Playwright (#30, #31), CI monitoring (#32)
 - [ ] **Week 5, delivery:** this deploy plan and the pipeline doc (#28); demo and presentation prep (#33): push code, pipeline runs, new image on Docker Hub, `docker compose up`; every member can explain their own service and pipeline
 
 Tick a box when the matching tickets are closed.
