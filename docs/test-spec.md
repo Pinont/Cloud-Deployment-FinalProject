@@ -6,7 +6,7 @@ Spec: #1 · Ticket: #3 · Owner: PM · Handed to: Tester (`phoo3011`)
 
 | Level | Count | IDs |
 |---|---|---|
-| Unit | 12 (+1 PM addition) | AU-01..04, RS-01..03, RV-01..03, FV-01..03 |
+| Unit | 12 (+2 PM additions) | AU-01..05, RS-01..03, RV-01..03, FV-01..03 |
 | Integration | 3 | IT-01..03 |
 | E2E | 1 | E2E-01 |
 
@@ -42,7 +42,7 @@ Docker Hub push, so no image is published (user story 24).
 
 ## 4. Unit tests
 
-### auth-service (PM) — tickets #4, #14, #23, #24
+### auth-service (PM) — tickets #4, #14, #23, #24, #93
 
 | ID | Input | Expected result |
 |---|---|---|
@@ -50,6 +50,7 @@ Docker Hub push, so no image is published (user story 24).
 | AU-02 | `POST /auth/login` with a registered email and a wrong password | 401; generic message, the same as for an unknown email |
 | AU-03 | `POST /auth/register` with an email that already exists | 409; no second user stored |
 | AU-04 | `POST /auth/register` with a password shorter than 8 characters (added by PM) | 400; no user stored |
+| AU-05 | `npm run set-role -- <email> <role>` (`scripts/set-role.js`, added by PM) with (a) a registered email and `admin`, (b) an unknown email, (c) a role other than `user`, `owner`, `admin`, (d) no arguments | (a) exit 0; the stored role is `admin`. (b), (c), (d) exit non-zero with an error message; no user changed |
 
 ### restaurant-service (Dev 1)
 
