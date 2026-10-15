@@ -41,12 +41,29 @@ jobs:
         run: |
           email="ci-${GITHUB_RUN_ID}@example.com"
           password="ci-integration-password"
-          curl --fail-with-body --silent --show-error \
-            --retry 30 --retry-delay 2 --retry-connrefused \
-            -X POST http://127.0.0.1/api/auth/register \
-            -H 'content-type: application/json' \
-            -d "{\"email\":\"$email\",\"password\":\"$password\",\"name\":\"CI Integration\"}" \
-            -o /dev/null
+          register_payload="{\"email\":\"$email\",\"password\":\"$password\",\"name\":\"CI Integration\"}"
+          for attempt in {1..30}; do
+            register_status="$(
+              curl --silent --show-error \
+                -X POST http://127.0.0.1/api/auth/register \
+                -H 'content-type: application/json' \
+                -d "$register_payload" \
+                -o /tmp/register-response \
+                -w '%{http_code}' || true
+            )"
+            case "$register_status" in
+              201|409) break ;;
+              000|502|503|504) sleep 2 ;;
+              *)
+                cat /tmp/register-response
+                exit 1
+                ;;
+            esac
+            if [[ "$attempt" == 30 ]]; then
+              cat /tmp/register-response
+              exit 1
+            fi
+          done
           token="$(
             curl --fail-with-body --silent --show-error \
               --retry 30 --retry-delay 2 --retry-connrefused \
