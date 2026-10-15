@@ -73,7 +73,7 @@ questions underneath.
 ### @Pinont: auth-service (port 3001), gateway, frontend, pipeline
 - **Does:** registration, login with a 1-hour JWT (HS256), refresh tokens, profile (`/auth/me`), a 15-minute
   lockout after 5 wrong passwords (423), and `user` / `owner` / `admin` roles carried in the token.
-- **Endpoints:** `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `PUT /auth/me`, and `PUT /auth/users/:id/role` (admin only; the first admin is made with `npm run set-role -- <email> admin`).
+- **Endpoints:** `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `PUT /auth/me`, and `PUT /auth/users/:id/role` (admin only; after registering the account, make the first admin with `docker compose exec auth npm run set-role -- <email> admin`).
 - **Tests:** AU-01 to AU-04 and IT-01 (no token → 401), plus lockout, refresh-token and role tests; Jest with a 70% line-coverage gate.
 - **Pipeline:** `auth-service.yml` calls `_service-ci.yml`; the PM owns the reusable workflow, the compose files, nginx and the docs.
 
