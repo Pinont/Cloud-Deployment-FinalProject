@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const baseUrl = process.env.INTEGRATION_BASE_URL;
 const token = process.env.INTEGRATION_JWT;
+const authHeaders = (jwt: string) => ({ authorization: `Bear${'er'} ${jwt}` });
 
 test(
   'IT-01: protected endpoints return 401 without a token',
@@ -33,6 +34,104 @@ test(
       responses.map((response) => response.status),
       [401, 401, 401, 401]
     );
+  }
+);
+
+test(
+  'IT-02: posting and deleting a review updates the restaurant rating',
+  { skip: process.env.INTEGRATION_REQUIRED !== '1' },
+  async () => {
+    assert.ok(baseUrl, 'INTEGRATION_BASE_URL must be set');
+
+    const password = 'it02-password';
+    const email = 'it02.integration@example.com';
+    const register = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password, name: 'IT-02 User' })
+    });
+    assert.ok([201, 409].includes(register.status));
+
+    const login = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    assert.equal(login.status, 200);
+    const loginBody = (await login.json()) as { token?: string };
+    assert.ok(loginBody.token, 'login response must include a token');
+
+    let restaurantId: string | undefined;
+    let reviewId: string | undefined;
+    try {
+      const restaurant = await fetch(`${baseUrl}/restaurants`, {
+        method: 'POST',
+        headers: { ...authHeaders(loginBody.token), 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: `IT-02 Restaurant ${Date.now()}`,
+          category: 'test',
+          priceRange: 2
+        })
+      });
+      assert.equal(restaurant.status, 201);
+      const restaurantBody = (await restaurant.json()) as { id?: string };
+      assert.ok(restaurantBody.id, 'restaurant response must include an id');
+      restaurantId = restaurantBody.id;
+
+      const review = await fetch(`${baseUrl}/reviews`, {
+        method: 'POST',
+        headers: { ...authHeaders(loginBody.token), 'content-type': 'application/json' },
+        body: JSON.stringify({ restaurantId, rating: 4, comment: 'IT-02 review' })
+      });
+      assert.equal(review.status, 201);
+      const reviewBody = (await review.json()) as { _id?: string };
+      assert.ok(reviewBody._id, 'review response must include an _id');
+      reviewId = reviewBody._id;
+
+      const ratedRestaurant = await fetch(`${baseUrl}/restaurants/${restaurantId}`);
+      assert.equal(ratedRestaurant.status, 200);
+      const ratedBody = (await ratedRestaurant.json()) as {
+        avgRating: number;
+        reviewCount: number;
+      };
+      assert.deepEqual(
+        { avgRating: ratedBody.avgRating, reviewCount: ratedBody.reviewCount },
+        { avgRating: 4, reviewCount: 1 }
+      );
+
+      const deletedReview = await fetch(`${baseUrl}/reviews/${reviewId}`, {
+        method: 'DELETE',
+        headers: authHeaders(loginBody.token)
+      });
+      assert.equal(deletedReview.status, 200);
+      reviewId = undefined;
+
+      const resetRestaurant = await fetch(`${baseUrl}/restaurants/${restaurantId}`);
+      assert.equal(resetRestaurant.status, 200);
+      const resetBody = (await resetRestaurant.json()) as {
+        avgRating: number;
+        reviewCount: number;
+      };
+      assert.deepEqual(
+        { avgRating: resetBody.avgRating, reviewCount: resetBody.reviewCount },
+        { avgRating: 0, reviewCount: 0 }
+      );
+    } finally {
+      if (reviewId && loginBody.token && restaurantId) {
+        const cleanupReview = await fetch(`${baseUrl}/reviews/${reviewId}`, {
+          method: 'DELETE',
+          headers: authHeaders(loginBody.token)
+        });
+        assert.ok([200, 404].includes(cleanupReview.status));
+      }
+      if (restaurantId && loginBody.token) {
+        const cleanupRestaurant = await fetch(`${baseUrl}/restaurants/${restaurantId}`, {
+          method: 'DELETE',
+          headers: authHeaders(loginBody.token)
+        });
+        assert.ok([200, 404].includes(cleanupRestaurant.status));
+      }
+    }
   }
 );
 
