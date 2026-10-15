@@ -15,6 +15,19 @@ const restaurantSchema = new mongoose.Schema(
     address: { type: String, trim: true },
     openTime: { type: String, match: [HHMM, 'openTime must be HH:mm (00:00-23:59)'] },
     closeTime: { type: String, match: [HHMM, 'closeTime must be HH:mm (00:00-23:59)'] },
+    // cast: false — only real numbers; "13.7" or true would otherwise be cast to 13.7 / 1.
+    lat: {
+      type: Number,
+      cast: false,
+      min: [-90, 'lat must be -90 to 90'],
+      max: [90, 'lat must be -90 to 90'],
+    },
+    lng: {
+      type: Number,
+      cast: false,
+      min: [-180, 'lng must be -180 to 180'],
+      max: [180, 'lng must be -180 to 180'],
+    },
     ownerId: { type: String, required: true },
     avgRating: { type: Number, default: 0 },
     reviewCount: { type: Number, default: 0 },
@@ -26,6 +39,13 @@ const restaurantSchema = new mongoose.Schema(
 restaurantSchema.pre('validate', function requireBothHours() {
   if (Boolean(this.openTime) !== Boolean(this.closeTime)) {
     this.invalidate('closeTime', 'openTime and closeTime must be set together');
+  }
+});
+
+// #38 — a location needs both coordinates.
+restaurantSchema.pre('validate', function requireBothCoordinates() {
+  if ((this.lat == null) !== (this.lng == null)) {
+    this.invalidate('lng', 'lat and lng must be set together');
   }
 });
 
