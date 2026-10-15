@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restaurants</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wide">
+    <nav><a href="/">Log in</a> · <a href="restaurants.html">Restaurants</a></nav>
+    <h1>Find a restaurant</h1>
+
+    <form id="filters">
+      <label>Category <input name="category" type="text" placeholder="e.g. thai"></label>
+      <label>Price
+        <select name="price">
+          <option value="">Any</option>
+          <option value="1">$</option>
+          <option value="2">$$</option>
+          <option value="3">$$$</option>
+          <option value="4">$$$$</option>
+        </select>
+      </label>
+      <label class="inline"><input name="sort" type="checkbox" value="rating"> Best rated first</label>
+      <button type="submit">Search</button>
+    </form>
+
+    <p id="status" role="status"></p>
+    <ul id="results" class="cards"></ul>
+  </main>
+  <script src="common.js"></script>
+  <script src="restaurants.js"></script>
+</body>
+</html>
