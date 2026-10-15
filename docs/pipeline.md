@@ -15,7 +15,9 @@ only (see `.github/CODEOWNERS`).
    image, but only if `main` has not moved on in the meantime. Concurrent runs for one service queue up
    instead of overwriting each other.
 4. **Required CI (`<service>`)** – the one check branch protection requires. It passes when `changes` passed and,
-   if the service changed, `test` and `publish` passed. It is the check name the repo requires.
+   if the service changed, `test` passed. On pushes to `main`, `publish` must also pass; on pull requests and
+   pushes to `develop`, `publish` is skipped, so a green pull request check does not mean an image was
+   published. It is the check name the repo requires.
 
 Auto-merge (`.github/workflows/auto-merge.yml`) turns on GitHub auto-merge for non-draft pull requests. It
 approves nothing and does not bypass branch protection.
@@ -58,7 +60,10 @@ exists, this doc and `deploy-plan.md` should describe the candidate-tag step.
 1. Copy `docs/templates/service-workflow.yml` to `.github/workflows/<service>.yml` and replace `SERVICE` with
    the service folder (for example `restaurant-service`). Keep the job named `Required CI (<service>)`.
 2. Copy `docs/templates/Dockerfile` to `<service>/Dockerfile` and set the port: auth 3001, restaurant 3002,
-   review 3003, favorite 3004. Add a `.dockerignore`.
+   review 3003, favorite 3004. Add a `.dockerignore`. The template is for plain JavaScript services. For a
+   TypeScript service (`review-service`, `favorite-service`) use `review-service/Dockerfile` as the
+   reference instead: it builds with `npm run build` in a first stage, installs only production dependencies
+   in the final stage and starts `dist/src/server.js`, not `src/server.js`.
 3. In the service's `package.json`, define a `lint` script (ESLint) and a `test` script that runs Jest with
    `--coverage` and a 70% `coverageThreshold`.
 4. Add the workflow file to `.github/CODEOWNERS` under its owner.
