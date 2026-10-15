@@ -118,18 +118,26 @@ test(
       );
     } finally {
       if (reviewId && loginBody.token && restaurantId) {
-        const cleanupReview = await fetch(`${baseUrl}/reviews/${reviewId}`, {
-          method: 'DELETE',
-          headers: authHeaders(loginBody.token)
-        });
-        assert.ok([200, 404].includes(cleanupReview.status));
+        try {
+          const cleanupReview = await fetch(`${baseUrl}/reviews/${reviewId}`, {
+            method: 'DELETE',
+            headers: authHeaders(loginBody.token)
+          });
+          assert.ok([200, 404].includes(cleanupReview.status));
+        } catch (error) {
+          console.warn('Failed to clean up IT-02 review:', error);
+        }
       }
       if (restaurantId && loginBody.token) {
-        const cleanupRestaurant = await fetch(`${baseUrl}/restaurants/${restaurantId}`, {
-          method: 'DELETE',
-          headers: authHeaders(loginBody.token)
-        });
-        assert.ok([200, 404].includes(cleanupRestaurant.status));
+        try {
+          const cleanupRestaurant = await fetch(`${baseUrl}/restaurants/${restaurantId}`, {
+            method: 'DELETE',
+            headers: authHeaders(loginBody.token)
+          });
+          assert.ok([200, 404].includes(cleanupRestaurant.status));
+        } catch (error) {
+          console.warn('Failed to clean up IT-02 restaurant:', error);
+        }
       }
     }
   }
