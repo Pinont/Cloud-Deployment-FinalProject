@@ -79,7 +79,7 @@ Weeks follow the ticket plan (extras in week 4, demo in week 5).
 - [x] **Week 1, foundation:** monorepo, CODEOWNERS and templates (#2), reusable CI/CD and Docker Hub push (#12), Nginx gateway (#13), Test Spec (#3)
 - [x] **Week 2, core services:** auth register, login and `/auth/me`; restaurant, review and favorite core endpoints
 - [ ] **Week 3, tests, CI and pages:** done: a unit-test and CI workflow for each of the four services, docker-compose (#20), login and register page (#21). Left: restaurant search page and restaurant/review page (#22)
-- [ ] **Week 4, extras and integration:** done: auth refresh token, the lockout and owner/admin roles, restaurant "open now" and nearby search, review likes, favorite multiple and shared lists, integration tests IT-01 and IT-03 (#29). Left: integration test IT-02 (a review updates the restaurant's `avgRating` and `reviewCount`; the Test Spec ties it to the review rating ticket #16, with @flogame55 or the Tester as owner, and no automated test exists yet), review owner reply and images (#40, #41), E2E workflow and E2E-01 with Playwright (#30, #31), CI monitoring (#32)
+- [ ] **Week 4, extras and integration:** done: auth refresh token, the lockout and owner/admin roles, restaurant "open now" and nearby search, review likes, favorite multiple and shared lists, integration tests IT-01..03 (#29, #96), E2E workflow and E2E-01 with Playwright (#30, #31). Left: review owner reply and images (#40, #41), CI monitoring (#32)
 - [ ] **Week 5, delivery:** this deploy plan and the pipeline doc (#28); demo and presentation prep (#33): push code, pipeline runs, new image on Docker Hub, `docker compose up`; every member can explain their own service and pipeline
 
 Tick a box when the matching tickets are closed.

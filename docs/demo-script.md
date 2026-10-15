@@ -86,13 +86,13 @@ questions underneath.
 ### @flogame55: review-service (port 3003)
 - **Does:** one review per user per restaurant (rating 1 to 5 and a comment), listing and rating summary, deleting your own review, likes, and recalculating the restaurant's average rating through restaurant-service after a create or delete.
 - **Endpoints:** `POST /reviews`, `GET /reviews/restaurant/:id`, `GET /reviews/restaurant/:id/rating`, `DELETE /reviews/:id`, `POST` and `DELETE /reviews/:id/like`.
-- **Tests:** RV-01 to RV-03; Jest with a 70% gate. IT-02 (a review updates the restaurant) is not automated yet.
+- **Tests:** RV-01 to RV-03; Jest with a 70% gate. IT-02 (a review updates the restaurant) runs in the compose integration suite.
 - **Pipeline:** `review-service.yml`; TypeScript with a two-stage Dockerfile (build, then run `dist/src/server.js`).
 
 ### @phoo3011: favorite-service (port 3004), E2E and CI monitoring
 - **Does:** save restaurants to named lists, list and remove them, share a list through a read-only link, and revoke it. Favourites and share links are stored in MongoDB.
 - **Endpoints:** `POST /favorites`, `GET /favorites/me`, `DELETE /favorites/:restaurantId`, `POST` and `DELETE /favorites/share`, `GET /favorites/shared/:token`.
-- **Tests:** FV-01 to FV-03, and the integration tests IT-01 and IT-03 against the compose stack; a 70% gate.
+- **Tests:** FV-01 to FV-03, and the integration tests IT-01 to IT-03 against the compose stack; a 70% gate.
 - **Pipeline:** `favorite-service.yml`; TypeScript. E2E-01 (Playwright) and the E2E workflow are still open (#30, #31).
 
 ### Questions everyone should be able to answer
@@ -103,6 +103,6 @@ questions underneath.
 5. Which services call each other? (review → restaurant for the existence check and rating update; favorite → restaurant for the existence check)
 
 ## Things to be honest about
-- IT-02 has no automated test yet, and E2E-01 with the Playwright workflow is still open (#30, #31).
+- IT-01 to IT-03 run in the compose integration job, and E2E-01 runs with the Playwright workflow.
 - The publish job pushes `sha-<commit>` and `latest` right after the unit tests; the planned step that promotes images only after the integration and E2E tests pass does not exist yet (`pipeline.md`).
 - The website cannot add restaurants or show the favourites list; use the API for that.

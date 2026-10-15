@@ -104,4 +104,4 @@ Source: ticket #15 (`[review] DELETE /reviews/:id`).
 |---|---|---|
 | PR and push, path-filtered per service | Unit tests of that service with coverage | 100% pass, coverage ≥ 70% |
 | `main` only, after the unit gate | Docker build and push with a candidate tag | Unit tests 100% pass, coverage ≥ 70% |
-| `e2e.yml` | E2E-01 on the published `latest` images after a successful service workflow on `main` (or on manual dispatch) | Verify the published images; this workflow does not run IT-01..03 or promote images |
+| `e2e.yml` | IT-01..03 and E2E-01 on the published `latest` images after a successful service workflow on `main` (or on manual dispatch) | Verify the published images; integration and E2E jobs fail on test errors and do not promote images |
